@@ -94,6 +94,13 @@
         return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     };
 
+    const randomizeAmount = (amount, variance = 0.02) => {
+        if (amount <= 1) return amount;
+        const delta = (Math.random() * 2 - 1) * variance;
+        const randomized = Math.round(amount * (1 + delta));
+        return Math.max(1, randomized);
+    };
+
     const parseAmount = (value) => {
         if (value == null) return 0;
         if (typeof value !== 'string') {
@@ -166,7 +173,8 @@
         lastAttackDepositTime = now;
         const { cash } = getVaultValues();
         if (cash > 0) {
-            submitVaultForm('deposit', cash);
+            const depositAmount = randomizeAmount(cash, 0.03);
+            submitVaultForm('deposit', depositAmount);
         }
     };
 
@@ -225,12 +233,13 @@
         }
 
         if (delta > 0) {
-            const depositAmount = delta;
+            const depositAmount = randomizeAmount(delta, 0.02);
             submitVaultForm('deposit', depositAmount);
             return;
         }
 
-        const withdrawAmount = Math.min(Math.abs(delta), vault);
+        const baseWithdraw = Math.min(Math.abs(delta), vault);
+        const withdrawAmount = Math.min(vault, randomizeAmount(baseWithdraw, 0.02));
         if (withdrawAmount <= 0) return;
         submitVaultForm('withdraw', withdrawAmount);
     };
