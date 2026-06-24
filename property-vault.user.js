@@ -38,6 +38,7 @@
         autoMaintainEnabled: false,
         autoAttackDepositEnabled: true,
         attackRecoveryDelaySeconds: 10,
+        targetTolerancePercent: 0.02,
         insertionLabel: 'Vault Auto Cash Manager'
     });
 
@@ -50,6 +51,11 @@
     let lastAttackState = false;
     const ATTACK_DEPOSIT_COOLDOWN = 60000;
     const ATTACK_XPATH = '/html/body/div[2]/div[3]/div';
+    const HOSPITAL_MESSAGE = "This area is unavailable while you're in hospital.";
+    const HOSPITAL_CHECK_INTERVAL_SECONDS = 10;
+    const HOSPITAL_CHECK_INTERVAL_MS = HOSPITAL_CHECK_INTERVAL_SECONDS * 1000;
+    let hospitalCheckInterval = null;
+    let lastHospitalState = false;
 
     const getNodeByXPath = (xpath) => {
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
@@ -90,6 +96,44 @@
         lastAttackState = currentState;
     };
 
+    const isHospitalStatus = () => {
+        return document.querySelector('li[class*="icon15"]') !== null;
+    };
+
+    const startHospitalMonitor = () => {
+        const hospitalActive = isHospitalStatus();
+        if (hospitalActive) {
+            lastHospitalState = true;
+            if (!hospitalCheckInterval) {
+                console.log('[Vault Script] Hospital status detected. Pausing automation and waiting to retry every', HOSPITAL_CHECK_INTERVAL_MS / 1000, 'seconds.');
+                hospitalCheckInterval = setInterval(() => {
+                    if (isHospitalStatus()) {
+                        console.log('[Vault Script] Still in hospital. Waiting to retry...');
+                        return;
+                    }
+                    console.log('[Vault Script] Hospital status cleared. Reloading page to resume automation.');
+                    clearInterval(hospitalCheckInterval);
+                    hospitalCheckInterval = null;
+                    location.reload();
+                }, HOSPITAL_CHECK_INTERVAL_MS);
+            }
+            return true;
+        }
+
+        if (lastHospitalState) {
+            lastHospitalState = false;
+            if (hospitalCheckInterval) {
+                clearInterval(hospitalCheckInterval);
+                hospitalCheckInterval = null;
+            }
+            console.log('[Vault Script] Hospital status just cleared. Reloading page to resume automation.');
+            location.reload();
+            return true;
+        }
+
+        return false;
+    };
+
     const formatNumber = (value) => {
         return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     };
@@ -99,6 +143,16 @@
         const delta = (Math.random() * 2 - 1) * variance;
         const randomized = Math.round(amount * (1 + delta));
         return Math.max(1, randomized);
+    };
+
+    const randomizeAmountAbove = (amount, variance = 0.02) => {
+        if (amount <= 1) return amount;
+        const extra = Math.round(amount * Math.random() * variance);
+        return amount + Math.max(1, extra);
+    };
+
+    const getToleranceThreshold = (target) => {
+        return Math.max(1, Math.round(target * CONFIG.targetTolerancePercent));
     };
 
     const parseAmount = (value) => {
@@ -141,7 +195,7 @@
     const updateMaintainInfo = ({ cash, vault }) => {
         const info = document.getElementById('tm-vault-maintain-info');
         if (info) {
-            info.textContent = `Current cash: $${formatNumber(cash)} | Vault: $${formatNumber(vault)} | Target: $${formatNumber(parseAmount(CONFIG.targetCashOnHand))}`;
+            info.textContent = `Current cash: $${formatNumber(cash)} | Vault: $${formatNumber(vault)} | Target: $${formatNumber(parseAmount(CONFIG.targetCashOnHand))} | Margin: ${Math.round(CONFIG.targetTolerancePercent * 100)}%`;
         }
     };
 
@@ -165,6 +219,7 @@
     };
 
     const depositAllCashOnAttack = () => {
+        if (isHospitalStatus()) return;
         if (!CONFIG.autoAttackDepositEnabled) return;
         const now = Date.now();
         if (now - lastAttackDepositTime < ATTACK_DEPOSIT_COOLDOWN) {
@@ -218,28 +273,32 @@
     };
 
     const maintainCashOnHand = () => {
+        if (isHospitalStatus()) return;
         const target = parseAmount(CONFIG.targetCashOnHand);
         if (target <= 0) return;
 
         const { cash, vault } = getVaultValues();
         const delta = cash - target;
+        const tolerance = getToleranceThreshold(target);
         const info = document.getElementById('tm-vault-maintain-info');
         if (info) {
-            info.textContent = `Current cash: $${formatNumber(cash)} | Vault: $${formatNumber(vault)} | Target: $${formatNumber(target)}`;
+            info.textContent = `Current cash: $${formatNumber(cash)} | Vault: $${formatNumber(vault)} | Target: $${formatNumber(target)} | Margin: ${Math.round(CONFIG.targetTolerancePercent * 100)}%`;
         }
 
-        if (delta === 0) {
+        if (Math.abs(delta) <= tolerance) {
             return;
         }
 
+        const required = Math.max(1, Math.abs(delta) - tolerance);
         if (delta > 0) {
-            const depositAmount = randomizeAmount(delta, 0.02);
-            submitVaultForm('deposit', depositAmount);
+            const depositAmount = randomizeAmountAbove(required, 0.02);
+            if (depositAmount > 0) {
+                submitVaultForm('deposit', depositAmount);
+            }
             return;
         }
 
-        const baseWithdraw = Math.min(Math.abs(delta), vault);
-        const withdrawAmount = Math.min(vault, randomizeAmount(baseWithdraw, 0.02));
+        const withdrawAmount = Math.min(vault, randomizeAmountAbove(required, 0.02));
         if (withdrawAmount <= 0) return;
         submitVaultForm('withdraw', withdrawAmount);
     };
@@ -276,6 +335,10 @@
                     Auto maintain
                 </label>
                 <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+                    Margin:
+                    <input id="tm-target-margin" type="text" value="${(CONFIG.targetTolerancePercent * 100).toFixed(1)}" style="width:60px; padding:4px 6px; border-radius:4px; border:1px solid #555; background:#111; color:#eee;">%
+                </label>
+                <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
                     <input id="tm-auto-attack-deposit" type="checkbox"${CONFIG.autoAttackDepositEnabled ? ' checked' : ''}>
                     Deposit on attack
                 </label>
@@ -285,6 +348,7 @@
         wrap.parentNode.insertBefore(panel, wrap);
 
         const targetInput = panel.querySelector('#tm-target-cash');
+        const marginInput = panel.querySelector('#tm-target-margin');
         const autoMaintainInput = panel.querySelector('#tm-auto-maintain');
         const autoAttackDepositInput = panel.querySelector('#tm-auto-attack-deposit');
         targetInput?.addEventListener('change', () => {
@@ -292,6 +356,16 @@
             saveSettings();
             if (autoMaintain) {
                 maintainCashOnHand();
+            }
+        });
+        marginInput?.addEventListener('change', () => {
+            const value = parseFloat(marginInput.value);
+            if (!Number.isNaN(value) && value >= 0) {
+                CONFIG.targetTolerancePercent = value / 100;
+                saveSettings();
+                if (autoMaintain) {
+                    maintainCashOnHand();
+                }
             }
         });
         autoMaintainInput?.addEventListener('change', () => {
@@ -318,8 +392,10 @@
     };
 
     const init = () => {
+        if (startHospitalMonitor()) return;
         ensureControlPanel();
         const observer = new MutationObserver(() => {
+            if (startHospitalMonitor()) return;
             ensureControlPanel();
             scheduleMaybeMaintain();
             checkAttackState();
@@ -358,7 +434,15 @@
         });
     };
 
-    waitForNode('.vault-wrap').then((node) => {
-        if (node) init();
-    });
+    const initWhenReady = () => {
+        if (document.body) {
+            init();
+        } else {
+            waitForNode('body').then((node) => {
+                if (node) init();
+            });
+        }
+    };
+
+    initWhenReady();
 })();
