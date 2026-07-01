@@ -211,7 +211,7 @@
             if (valuesChanged(values)) {
                 lastVaultState = values;
                 updateMaintainInfo(values);
-                if (autoMaintain) {
+                if (autoMaintain && !getAttackStateFromXPath()) {
                     maintainCashOnHand();
                 }
             }
