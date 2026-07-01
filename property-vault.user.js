@@ -138,19 +138,6 @@
         return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     };
 
-    const randomizeAmount = (amount, variance = 0.02) => {
-        if (amount <= 1) return amount;
-        const delta = (Math.random() * 2 - 1) * variance;
-        const randomized = Math.round(amount * (1 + delta));
-        return Math.max(1, randomized);
-    };
-
-    const randomizeAmountAbove = (amount, variance = 0.02) => {
-        if (amount <= 1) return amount;
-        const extra = Math.round(amount * Math.random() * variance);
-        return amount + Math.max(1, extra);
-    };
-
     const getToleranceThreshold = (target) => {
         return Math.max(1, Math.round(target * CONFIG.targetTolerancePercent));
     };
@@ -228,8 +215,7 @@
         lastAttackDepositTime = now;
         const { cash } = getVaultValues();
         if (cash > 0) {
-            const depositAmount = randomizeAmount(cash, 0.03);
-            submitVaultForm('deposit', depositAmount);
+            submitVaultForm('deposit', cash);
         }
     };
 
@@ -291,14 +277,11 @@
 
         const required = Math.max(1, Math.abs(delta) - tolerance);
         if (delta > 0) {
-            const depositAmount = randomizeAmountAbove(required, 0.02);
-            if (depositAmount > 0) {
-                submitVaultForm('deposit', depositAmount);
-            }
+            submitVaultForm('deposit', required);
             return;
         }
 
-        const withdrawAmount = Math.min(vault, randomizeAmountAbove(required, 0.02));
+        const withdrawAmount = Math.min(vault, required);
         if (withdrawAmount <= 0) return;
         submitVaultForm('withdraw', withdrawAmount);
     };
