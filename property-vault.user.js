@@ -38,7 +38,6 @@
         autoMaintainEnabled: false,
         autoAttackDepositEnabled: true,
         attackRecoveryDelaySeconds: 10,
-        targetTolerancePercent: 0.02,
         insertionLabel: 'Vault Auto Cash Manager'
     });
 
@@ -138,10 +137,6 @@
         return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     };
 
-    const getToleranceThreshold = (target) => {
-        return Math.max(1, Math.round(target * CONFIG.targetTolerancePercent));
-    };
-
     const parseAmount = (value) => {
         if (value == null) return 0;
         if (typeof value !== 'string') {
@@ -182,7 +177,7 @@
     const updateMaintainInfo = ({ cash, vault }) => {
         const info = document.getElementById('tm-vault-maintain-info');
         if (info) {
-            info.textContent = `Current cash: $${formatNumber(cash)} | Vault: $${formatNumber(vault)} | Target: $${formatNumber(parseAmount(CONFIG.targetCashOnHand))} | Margin: ${Math.round(CONFIG.targetTolerancePercent * 100)}%`;
+            info.textContent = `Current cash: $${formatNumber(cash)} | Vault: $${formatNumber(vault)} | Target: $${formatNumber(parseAmount(CONFIG.targetCashOnHand))}`;
         }
     };
 
@@ -265,17 +260,16 @@
 
         const { cash, vault } = getVaultValues();
         const delta = cash - target;
-        const tolerance = getToleranceThreshold(target);
         const info = document.getElementById('tm-vault-maintain-info');
         if (info) {
-            info.textContent = `Current cash: $${formatNumber(cash)} | Vault: $${formatNumber(vault)} | Target: $${formatNumber(target)} | Margin: ${Math.round(CONFIG.targetTolerancePercent * 100)}%`;
+            info.textContent = `Current cash: $${formatNumber(cash)} | Vault: $${formatNumber(vault)} | Target: $${formatNumber(target)}`;
         }
 
-        if (Math.abs(delta) <= tolerance) {
+        if (delta === 0) {
             return;
         }
 
-        const required = Math.max(1, Math.abs(delta) - tolerance);
+        const required = Math.abs(delta);
         if (delta > 0) {
             submitVaultForm('deposit', required);
             return;
@@ -318,10 +312,6 @@
                     Auto maintain
                 </label>
                 <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
-                    Margin:
-                    <input id="tm-target-margin" type="text" value="${(CONFIG.targetTolerancePercent * 100).toFixed(1)}" style="width:60px; padding:4px 6px; border-radius:4px; border:1px solid #555; background:#111; color:#eee;">%
-                </label>
-                <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
                     <input id="tm-auto-attack-deposit" type="checkbox"${CONFIG.autoAttackDepositEnabled ? ' checked' : ''}>
                     Deposit on attack
                 </label>
@@ -331,7 +321,6 @@
         wrap.parentNode.insertBefore(panel, wrap);
 
         const targetInput = panel.querySelector('#tm-target-cash');
-        const marginInput = panel.querySelector('#tm-target-margin');
         const autoMaintainInput = panel.querySelector('#tm-auto-maintain');
         const autoAttackDepositInput = panel.querySelector('#tm-auto-attack-deposit');
         targetInput?.addEventListener('change', () => {
@@ -339,16 +328,6 @@
             saveSettings();
             if (autoMaintain) {
                 maintainCashOnHand();
-            }
-        });
-        marginInput?.addEventListener('change', () => {
-            const value = parseFloat(marginInput.value);
-            if (!Number.isNaN(value) && value >= 0) {
-                CONFIG.targetTolerancePercent = value / 100;
-                saveSettings();
-                if (autoMaintain) {
-                    maintainCashOnHand();
-                }
             }
         });
         autoMaintainInput?.addEventListener('change', () => {
