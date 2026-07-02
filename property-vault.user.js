@@ -49,7 +49,7 @@
     let lastAttackDepositTime = 0;
     let lastAttackState = false;
     const ATTACK_DEPOSIT_COOLDOWN = 60000;
-    const ATTACK_XPATH = '/html/body/div[2]/div[3]/div';
+    const ATTACK_SELECTOR = '[class^="effectRoot"] > div';
     const HOSPITAL_MESSAGE = "This area is unavailable while you're in hospital.";
     const HOSPITAL_CHECK_INTERVAL_SECONDS = 10;
     const HOSPITAL_CHECK_INTERVAL_MS = HOSPITAL_CHECK_INTERVAL_SECONDS * 1000;
@@ -62,7 +62,7 @@
     };
 
     const getAttackStateFromXPath = () => {
-        const node = getNodeByXPath(ATTACK_XPATH);
+        const node = document.querySelector(ATTACK_SELECTOR);
         if (!node) return false;
         const cls = node.getAttribute('class');
         return typeof cls === 'string' && cls.trim().length > 0;
@@ -72,9 +72,11 @@
         if (attackRecoveryTimer) {
             clearTimeout(attackRecoveryTimer);
         }
+        console.log('[Vault Script] Attack ended, scheduling maintain in', CONFIG.attackRecoveryDelaySeconds, 'seconds');
         attackRecoveryTimer = setTimeout(() => {
             attackRecoveryTimer = null;
             if (!getAttackStateFromXPath() && autoMaintain) {
+                console.log('[Vault Script] Attack recovery delay passed, resuming maintenance');
                 maintainCashOnHand();
             }
         }, CONFIG.attackRecoveryDelaySeconds * 1000);
@@ -83,6 +85,7 @@
     const checkAttackState = () => {
         const currentState = getAttackStateFromXPath();
         if (currentState && !lastAttackState) {
+            console.log('[Vault Script] Attack detected');
             depositAllCashOnAttack();
             if (attackRecoveryTimer) {
                 clearTimeout(attackRecoveryTimer);
@@ -90,6 +93,7 @@
             }
         }
         if (!currentState && lastAttackState && autoMaintain) {
+            console.log('[Vault Script] Attack cleared');
             scheduleMaintainAfterRecovery();
         }
         lastAttackState = currentState;
@@ -205,12 +209,16 @@
         if (!CONFIG.autoAttackDepositEnabled) return;
         const now = Date.now();
         if (now - lastAttackDepositTime < ATTACK_DEPOSIT_COOLDOWN) {
+            console.log('[Vault Script] Attack deposit skipped due to cooldown');
             return;
         }
         lastAttackDepositTime = now;
         const { cash } = getVaultValues();
         if (cash > 0) {
+            console.log('[Vault Script] Depositing all cash on attack:', cash);
             submitVaultForm('deposit', cash);
+        } else {
+            console.log('[Vault Script] No cash to deposit on attack');
         }
     };
 
@@ -256,16 +264,18 @@
     const maintainCashOnHand = () => {
         if (isHospitalStatus()) return;
         const target = parseAmount(CONFIG.targetCashOnHand);
-        if (target <= 0) return;
+        if (target < 0) return;
 
         const { cash, vault } = getVaultValues();
         const delta = cash - target;
+        console.log('[Vault Script] Maintaining cash on hand. Current cash:', cash, 'Vault:', vault, 'Target:', target, 'Delta:', delta);
         const info = document.getElementById('tm-vault-maintain-info');
         if (info) {
             info.textContent = `Current cash: $${formatNumber(cash)} | Vault: $${formatNumber(vault)} | Target: $${formatNumber(target)}`;
         }
 
         if (delta === 0) {
+            console.log('[Vault Script] Cash on hand already at target');
             return;
         }
 
@@ -326,6 +336,7 @@
         targetInput?.addEventListener('change', () => {
             CONFIG.targetCashOnHand = targetInput.value;
             saveSettings();
+            console.log('[Vault Script] Target cash on hand set to', CONFIG.targetCashOnHand);
             if (autoMaintain) {
                 maintainCashOnHand();
             }
@@ -334,6 +345,7 @@
             autoMaintain = autoMaintainInput.checked;
             CONFIG.autoMaintainEnabled = autoMaintain;
             saveSettings();
+            console.log('[Vault Script] Auto maintain', autoMaintain ? 'enabled' : 'disabled');
             if (autoMaintain) {
                 CONFIG.targetCashOnHand = targetInput.value;
                 maintainCashOnHand();
@@ -407,4 +419,16 @@
     };
 
     initWhenReady();
+    // expose simple debug helpers to the console for troubleshooting
+    try {
+        window.tmVaultDebug = {
+            getAttackState: getAttackStateFromXPath,
+            getVaultValues: getVaultValues,
+            maintainNow: maintainCashOnHand,
+            config: CONFIG
+        };
+        console.log('[Vault Script] Debug helpers available at window.tmVaultDebug');
+    } catch (e) {
+        // ignore in restricted environments
+    }
 })();
