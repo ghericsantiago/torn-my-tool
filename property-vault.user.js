@@ -57,6 +57,8 @@
     const HOSPITAL_CHECK_INTERVAL_MS = HOSPITAL_CHECK_INTERVAL_SECONDS * 1000;
     let hospitalCheckInterval = null;
     let lastHospitalState = false;
+    const TRAVEL_CHECK_INTERVAL_MS = 5000; // Check every 5 seconds for travel status
+    let travelingCheckInterval = null;
 
     const getNodeByXPath = (xpath) => {
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
@@ -158,7 +160,8 @@
 
     const startHospitalMonitor = () => {
         const hospitalActive = isHospitalStatus();
-        if (hospitalActive) {
+        const isTraveling = document.querySelector('.info-msg.border-round').textContent.includes('while you\'re traveling.');
+        if (hospitalActive || isTraveling) {
             lastHospitalState = true;
             if (!hospitalCheckInterval) {
                 console.log('[Vault Script] Hospital status detected. Pausing automation and waiting to retry every', HOSPITAL_CHECK_INTERVAL_MS / 1000, 'seconds.');
@@ -172,6 +175,15 @@
                     hospitalCheckInterval = null;
                     location.reload();
                 }, HOSPITAL_CHECK_INTERVAL_MS);
+            }
+            if(isTraveling && !travelingCheckInterval) {
+                travelingCheckInterval = setInterval(() => {
+                    if (!isTraveling) {
+                        clearInterval(travelingCheckInterval);
+                        travelingCheckInterval = null;
+                        location.reload();
+                    }
+                }, TRAVEL_CHECK_INTERVAL_MS); // Check every 5 seconds
             }
             return true;
         }
