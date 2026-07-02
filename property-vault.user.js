@@ -48,7 +48,9 @@
     let attackRecoveryTimer = null;
     let lastAttackDepositTime = 0;
     let lastAttackState = false;
-    const ATTACK_DEPOSIT_COOLDOWN = 60000;
+    let postAttackRecoveryUntil = 0;
+    let postAttackCountdownInterval = null;
+    const ATTACK_DEPOSIT_COOLDOWN = 30000;
     const ATTACK_SELECTOR = '[class^="effectRoot"] > div';
     const HOSPITAL_MESSAGE = "This area is unavailable while you're in hospital.";
     const HOSPITAL_CHECK_INTERVAL_SECONDS = 10;
@@ -68,24 +70,75 @@
         return typeof cls === 'string' && cls.trim().length > 0;
     };
 
+    const startPostAttackCountdown = () => {
+        if (postAttackCountdownInterval) {
+            clearInterval(postAttackCountdownInterval);
+        }
+        postAttackCountdownInterval = setInterval(() => {
+            const remainingMs = postAttackRecoveryUntil - Date.now();
+            if (remainingMs <= 0) {
+                clearInterval(postAttackCountdownInterval);
+                postAttackCountdownInterval = null;
+                console.log('[Vault Script] Post-attack recovery period complete (0 seconds remaining)');
+                const countdownEl = document.getElementById('tm-attack-countdown');
+                if (countdownEl) {
+                    countdownEl.textContent = '';
+                    countdownEl.style.display = 'none';
+                }
+                return;
+            }
+            const remainingSec = Math.ceil(remainingMs / 1000);
+            console.log(`[Vault Script] Post-attack recovery countdown: ${remainingSec} seconds remaining`);
+            const countdownEl = document.getElementById('tm-attack-countdown');
+            if (countdownEl) {
+                countdownEl.textContent = `Recovery: ${remainingSec}s`;
+                countdownEl.style.display = 'inline';
+            }
+        }, 1000); // Update every 1 second for UI, log every update
+    };
+
     const scheduleMaintainAfterRecovery = () => {
         if (attackRecoveryTimer) {
             clearTimeout(attackRecoveryTimer);
         }
-        console.log('[Vault Script] Attack ended, scheduling maintain in', CONFIG.attackRecoveryDelaySeconds, 'seconds');
+        const delayMs = ATTACK_DEPOSIT_COOLDOWN;
+        console.log('[Vault Script] Attack ended, will resume maintenance after', delayMs / 1000, 'second cooldown');
         attackRecoveryTimer = setTimeout(() => {
             attackRecoveryTimer = null;
-            if (!getAttackStateFromXPath() && autoMaintain) {
-                console.log('[Vault Script] Attack recovery delay passed, resuming maintenance');
-                maintainCashOnHand();
+            if (postAttackCountdownInterval) {
+                clearInterval(postAttackCountdownInterval);
+                postAttackCountdownInterval = null;
             }
-        }, CONFIG.attackRecoveryDelaySeconds * 1000);
+            // Clear the recovery flag
+            postAttackRecoveryUntil = 0;
+            lastAttackState = false;
+            console.log('[Vault Script] Post-attack recovery period complete, flag reset');
+            
+            if (autoMaintain) {
+                console.log('[Vault Script] Resuming maintenance after recovery');
+                maintainCashOnHand();
+            } else {
+                console.log('[Vault Script] Auto maintain is disabled, not resuming maintenance');
+            }
+        }, delayMs);
     };
 
     const checkAttackState = () => {
         const currentState = getAttackStateFromXPath();
         if (currentState && !lastAttackState) {
             console.log('[Vault Script] Attack detected');
+            
+            // Immediately clear the class to reset detection state
+            const node = document.querySelector(ATTACK_SELECTOR);
+            if (node) {
+                node.className = '';
+                console.log('[Vault Script] Cleared effectRoot class on attack detection');
+            }
+            
+            // Set recovery period to block maintenance
+            postAttackRecoveryUntil = Date.now() + ATTACK_DEPOSIT_COOLDOWN;
+            console.log('[Vault Script] Post-attack recovery enabled for', ATTACK_DEPOSIT_COOLDOWN / 1000, 'seconds');
+            startPostAttackCountdown();
             depositAllCashOnAttack();
             if (attackRecoveryTimer) {
                 clearTimeout(attackRecoveryTimer);
@@ -197,6 +250,11 @@
             if (valuesChanged(values)) {
                 lastVaultState = values;
                 updateMaintainInfo(values);
+                const inPostAttackRecovery = Date.now() < postAttackRecoveryUntil;
+                if (inPostAttackRecovery) {
+                    console.log('[Vault Script] In post-attack recovery period, skipping maintenance');
+                    return;
+                }
                 if (autoMaintain && !getAttackStateFromXPath()) {
                     maintainCashOnHand();
                 }
@@ -263,6 +321,11 @@
 
     const maintainCashOnHand = () => {
         if (isHospitalStatus()) return;
+        const inPostAttackRecovery = Date.now() < postAttackRecoveryUntil;
+        if (inPostAttackRecovery) {
+            console.log('[Vault Script] In post-attack recovery period, skipping maintenance');
+            return;
+        }
         const target = parseAmount(CONFIG.targetCashOnHand);
         if (target < 0) return;
 
@@ -325,6 +388,7 @@
                     <input id="tm-auto-attack-deposit" type="checkbox"${CONFIG.autoAttackDepositEnabled ? ' checked' : ''}>
                     Deposit on attack
                 </label>
+                <span id="tm-attack-countdown" style="display:none; color:#ff6b6b; font-weight:bold; white-space:nowrap;"></span>
             </div>
         `;
 
