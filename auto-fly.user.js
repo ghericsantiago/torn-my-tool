@@ -30,6 +30,11 @@
         'South Africa'
     ];
 
+    // Items to purchase when abroad (loaded from shopping-list.txt)
+    const SHOPPING_LIST = [
+        'Camel Plushie','Chamois Plushie','Jaguar Plushie','Kitten Plushie','Lion Plushie','Monkey Plushie','Nessie Plushie','Panda Plushie','Red Fox Plushie','Sheep Plushie','Stingray Plushie','Teddy Bear Plushie','Wolverine Plushie','African Violet','Banana Orchid','Bunch of Black Roses','Bunch of Carnations','Bunch of Flowers','Ceibo Flower','Cherry Blossom','Crocus','Daffodil','Dahlia','Dozen Roses','Dozen White Roses','Edelweiss','Funeral Wreath','Heather','Orchid','Peony','Single Red Rose','Tribulus Omanense','White Lily'
+    ].map(s=>s.toLowerCase());
+
     function loadSettings(){
         try{ return Object.assign({ enabled:false, intervalMinutes:5, skipWarnings:false }, JSON.parse(localStorage.getItem(KEY)||'{}')); }
         catch(e){ return { enabled:false, intervalMinutes:5, skipWarnings:false }; }
@@ -115,6 +120,16 @@
         
         settings = loadSettings();
         if(!settings.enabled) return;
+        // If already abroad, attempt shopping routine first
+        try{
+            const body = document.body || {};
+            if(body.dataset && body.dataset.abroad === 'true'){
+                // run shopping routine (will navigate home when limit reached)
+                await processAbroadShopping();
+                // don't continue with travel logic while handling abroad shopping
+                return;
+            }
+        } catch(e){}
         if(isHospital()){ console.log('[AutoFly] Paused: in hospital'); return; }
         if(isAbroadOrTraveling()){ console.log('[AutoFly] Already abroad or traveling'); return; }
         // cooldown guard (avoid repeating clicks)
@@ -418,6 +433,122 @@
     }
 
     function wait(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
+    // Robust element click helper: tries multiple strategies
+    function safeClick(el){
+        if(!el) return false;
+        try{ el.focus && el.focus(); el.click(); return true; } catch(e){}
+        try{
+            const evs = ['pointerdown','pointerup','mousedown','mouseup','click'].map(t=> new MouseEvent(t,{bubbles:true,cancelable:true,view:window}));
+            for(const ev of evs) el.dispatchEvent(ev);
+            return true;
+        } catch(e){}
+        try{ if(typeof el.onclick === 'function') { el.onclick(); return true; } } catch(e){}
+        try{
+            if(el.tagName && el.tagName.toLowerCase() === 'a' && el.href){ location.href = el.href; return true; }
+        } catch(e){}
+        return false;
+    }
+
+    // Robust quantity setter for a shop row: attempts many heuristics to set qty
+    function safeSetQty(row, qty){
+        if(!row) return false;
+        const num = Math.max(1, Math.floor(Number(qty)||1));
+        // common inputs
+        const candidates = Array.from(row.querySelectorAll('input[type=number], input.input-money, input[placeholder], input[name*="qty"], input[type=hidden]'));
+        for(const inp of candidates){
+            try{
+                // If hidden, set value attribute
+                if(inp.type === 'hidden'){
+                    inp.value = String(num);
+                    inp.setAttribute('value', String(num));
+                } else {
+                    inp.focus && inp.focus();
+                    inp.value = String(num);
+                    inp.dispatchEvent(new Event('input',{bubbles:true}));
+                    inp.dispatchEvent(new Event('change',{bubbles:true}));
+                    inp.blur && inp.blur();
+                }
+                return true;
+            } catch(e){}
+        }
+
+        // try selects
+        const sel = row.querySelector('select');
+        if(sel){ try{ sel.value = String(num); sel.dispatchEvent(new Event('change',{bubbles:true})); return true; } catch(e){} }
+
+        // try clicking a per-row max button then adjusting if possible
+        const maxBtn = row.querySelector('.input-money-symbol button, .input-money-symbol input.wai-btn, button.max, .max-button');
+        if(maxBtn){ try{ safeClick(maxBtn); return true; } catch(e){} }
+
+        // fallback: set data attributes sometimes used by apps
+        const dataInp = row.querySelector('[data-money], [data-qty]');
+        if(dataInp){ try{ dataInp.setAttribute('data-money', String(num)); dataInp.setAttribute('data-qty', String(num)); return true; } catch(e){} }
+
+        return false;
+    }
+
+    function delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // Purchase items from SHOPPING_LIST when abroad
+    async function processAbroadShopping() {
+        try {
+            console.log('[AutoFly] processing abroad shopping');
+
+            const stockTableWrapper = document.querySelector('[class*="stockTableWrapper"]');
+            if (!stockTableWrapper) return;
+
+            const rows = stockTableWrapper.querySelectorAll('[class*="row"]');
+
+            for (const row of rows) {
+                const cells = row.querySelectorAll('[class*="cell"]');
+                if (cells.length < 7) continue;
+
+                const nameCell = cells[1];
+                const qtyCell = cells[5];
+                const buyCell = cells[6];
+
+                const itemName = nameCell.textContent.trim();
+                const maxQtyBtn = qtyCell.querySelector('span');
+                const buyBtn = buyCell.querySelector('button');
+
+                for (const want of SHOPPING_LIST) {
+                    if (itemName.toLowerCase().includes(want.toLowerCase())) {
+                        console.log(`[AutoFly] Buying ${itemName}`);
+
+                        safeClick(maxQtyBtn);
+                        await delay(500);
+
+                        safeClick(buyBtn);
+                        await delay(500);
+
+                        const yesBtn = document.querySelector('[class*="yes"]');
+                        safeClick(yesBtn);
+                        await delay(500);
+                    }
+                }
+
+                console.log('[AutoFly] checked:', itemName);
+            }
+
+            console.log('[AutoFly] Finished shopping. Travelling home...');
+
+            const travelHomeBtn = document.querySelector('[aria-controls="travel-home-panel"]');
+            safeClick(travelHomeBtn);
+
+            await delay(500);
+
+            const travelHomeConfirm = document.querySelector('[class*="confirmCancel"] button');
+            safeClick(travelHomeConfirm);
+
+            console.log('[AutoFly] shopping pass complete');
+
+        } catch (e) {
+            console.warn('[AutoFly] processAbroadShopping error', e);
+        }
+    }
 
     // Run on load
     try{ injectUI(); } catch(e){}
