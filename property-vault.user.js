@@ -241,15 +241,31 @@
                     if (travelCountdownInterval) {
                         clearInterval(travelCountdownInterval);
                     }
+                    const updateTravelUI = (sec) => {
+                        const el = document.getElementById('tm-travel-countdown');
+                        if (!el) return;
+                        if (sec <= 0) {
+                            el.style.display = 'none';
+                            el.textContent = '';
+                        } else {
+                            const m = Math.floor(sec / 60);
+                            const s = sec % 60;
+                            el.textContent = `Traveling: ${m}m ${s}s`;
+                            el.style.display = 'inline';
+                        }
+                    };
+                    updateTravelUI(countdown);
                     travelCountdownInterval = setInterval(() => {
                         countdown--;
                         if (countdown <= 0) {
                             clearInterval(travelCountdownInterval);
                             travelCountdownInterval = null;
+                            updateTravelUI(0);
                             console.log('[Vault Script] Travel time expired. Reloading page...');
                             location.reload();
                             return;
                         }
+                        updateTravelUI(countdown);
                         console.log(`[Vault Script] Travel reload countdown: ${countdown} seconds remaining...`);
                     }, 1000);
 
@@ -501,6 +517,7 @@
                     Deposit on attack
                 </label>
                 <span id="tm-attack-countdown" style="display:none; color:#ff6b6b; font-weight:bold; white-space:nowrap;"></span>
+                <span id="tm-travel-countdown" style="display:none; color:#f0a500; font-weight:bold; white-space:nowrap;"></span>
             </div>
         `;
 
