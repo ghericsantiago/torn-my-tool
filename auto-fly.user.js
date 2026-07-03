@@ -322,7 +322,10 @@
   }
 
   function isMobile() {
-    return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || window.innerWidth < 768;
+    if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)) return true;
+    if (window.innerWidth < 768) return true;
+    if ("ontouchstart" in window || navigator.maxTouchPoints > 0) return true;
+    return false;
   }
 
   function injectUI() {
@@ -376,8 +379,10 @@
         "box-shadow:0 3px 10px rgba(0,0,0,0.6)",
         "touch-action:manipulation",
       ].join(";");
-      document.body.appendChild(fab);
-      console.log("[AutoFly] FAB appended to body");
+      // Append to <html> (documentElement), NOT <body> — this keeps the FAB outside
+      // React's DOM tree so Torn's SPA can never remove it during re-renders.
+      document.documentElement.appendChild(fab);
+      console.log("[AutoFly] FAB appended to documentElement");
 
       // Backdrop + bottom sheet
       const backdrop = document.createElement("div");
@@ -403,7 +408,7 @@
       sheet.appendChild(handle);
       sheet.appendChild(panel);
       backdrop.appendChild(sheet);
-      document.body.appendChild(backdrop);
+      document.documentElement.appendChild(backdrop);
 
       const openModal = () => { backdrop.style.display = "flex"; };
       const closeModal = () => { backdrop.style.display = "none"; };
@@ -941,24 +946,12 @@
     console.error("[AutoFly] injectUI failed:", e);
   }
 
-  // Belt-and-suspenders: re-inject FAB every second if it disappears (handles aggressive SPA re-renders on mobile)
-  setInterval(() => {
-    if (isMobile() && !document.getElementById("tm-autofly-fab")) {
-      console.log("[AutoFly] FAB missing, re-injecting");
-      try { injectUI(); } catch (e) { console.error("[AutoFly] re-inject failed:", e); }
-    }
-  }, 1000);
-
-  // ensure UI injection on DOM changes (in case SPA renders after load)
+  // Fallback: ensure desktop inline panel is re-injected on SPA navigation
   const uiObserver = new MutationObserver(() => {
-    // On mobile re-inject if both FAB and panel are gone
-    if (isMobile()) {
-      if (!document.getElementById("tm-autofly-fab") && !document.getElementById("tm-autofly-panel")) {
-        injectUI();
-      }
-    } else {
+    if (!isMobile()) {
       injectUI();
     }
+    // Mobile FAB is attached to documentElement so React can't remove it — no need to re-inject
   });
   uiObserver.observe(document.documentElement, { childList: true, subtree: true });
 
