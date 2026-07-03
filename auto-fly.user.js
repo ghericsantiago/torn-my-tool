@@ -250,11 +250,8 @@
     // If desired country is set, attempt to set it first
     if (settings.desiredCountry) {
       const setOk = setCountryOnTravelPage(settings.desiredCountry);
-      // Also click the destination radio button on travel page
-      if (
-        location.pathname.includes("page.php") &&
-        location.search.includes("sid=travel")
-      ) {
+      // Also click the destination on the travel page
+      if (isTravelPage()) {
         await clickTravelDestination(settings.desiredCountry);
         // give UI time to update after destination selection
         await wait(1500);
@@ -532,12 +529,13 @@
     }
   }
 
-  // Click the destination radio button on the travel page (with retry)
+  // Click the destination on the travel page — handles both desktop (radio buttons)
+  // and mobile (expand buttons in a list).
   async function clickTravelDestination(countryName, retries = 3) {
     if (!countryName) return false;
     const low = countryName.toLowerCase();
 
-    // Find the radio button with matching country in aria-label
+    // Desktop layout: radio buttons with aria-label containing the country name
     const radioButtons = Array.from(
       document.querySelectorAll('input[type="radio"][name="destination"]'),
     );
@@ -555,13 +553,42 @@
       }
     }
 
-    // Radio buttons not found - retry if we have retries left
+    // Mobile layout: expand buttons in a destination list.
+    // Each button contains a <span class*="country"> with the country name.
+    const expandButtons = Array.from(
+      document.querySelectorAll('[class*="expandButton"]'),
+    );
+    for (const btn of expandButtons) {
+      const countrySpan = btn.querySelector('[class*="country"]');
+      if (
+        countrySpan &&
+        countrySpan.textContent.trim().toLowerCase().includes(low)
+      ) {
+        try {
+          console.log("[AutoFly] Mobile: clicking expand button for " + countryName);
+          safeClick(btn);
+          // Wait for the Travel button to appear inside the expanded section
+          await new Promise((resolve) => {
+            const obs = new MutationObserver(() => {
+              if (findFlyControl()) {
+                obs.disconnect();
+                resolve();
+              }
+            });
+            obs.observe(document.body, { childList: true, subtree: true });
+            setTimeout(() => { obs.disconnect(); resolve(); }, 5000);
+          });
+          return true;
+        } catch (e) {
+          console.warn("[AutoFly] Mobile: failed to click expand button", e);
+          return false;
+        }
+      }
+    }
+
+    // Neither layout found — retry
     if (retries > 0) {
-      console.log(
-        "[AutoFly] Radio buttons not found, retrying... (" +
-          retries +
-          " retries left)",
-      );
+      console.log("[AutoFly] Destination not found, retrying... (" + retries + " retries left)");
       await wait(300);
       return clickTravelDestination(countryName, retries - 1);
     }
