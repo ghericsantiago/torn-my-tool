@@ -545,7 +545,11 @@
   };
 
   const buildControlPanel = () => {
-    const anchor = document.querySelector(".content-title");
+    // Prefer .vault-wrap (vault form area, present when vault is accessible — works on mobile).
+    // Fall back to .content-title (page header, always present including hospital/travel state).
+    const vaultWrap = document.querySelector(".vault-wrap");
+    const contentTitle = document.querySelector(".content-title");
+    const anchor = vaultWrap || contentTitle;
     if (!anchor) return;
 
     const existing = document.getElementById(PANEL_ID);
@@ -584,7 +588,13 @@
             </div>
         `;
 
-    anchor.parentNode.insertBefore(panel, anchor.nextSibling);
+    if (vaultWrap) {
+      // Insert before the vault form (matches original v1.1 position — visible on mobile)
+      vaultWrap.parentNode.insertBefore(panel, vaultWrap);
+    } else {
+      // Insert after the page title (hospital/travel state — no vault form present)
+      contentTitle.parentNode.insertBefore(panel, contentTitle.nextSibling);
+    }
 
     const targetInput = panel.querySelector("#tm-target-cash");
     const autoMaintainInput = panel.querySelector("#tm-auto-maintain");
@@ -622,7 +632,7 @@
   };
 
   const ensureControlPanel = () => {
-    const anchor = document.querySelector(".content-title");
+    const anchor = document.querySelector(".vault-wrap") || document.querySelector(".content-title");
     if (!anchor) return;
     if (!document.getElementById(PANEL_ID)) {
       buildControlPanel();
