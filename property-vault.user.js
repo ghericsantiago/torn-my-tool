@@ -541,26 +541,27 @@
     };
 
     const init = () => {
-        const inHospital = startHospitalMonitor();
+        startHospitalMonitor();
         ensureControlPanel();
-        if (inHospital) return;
+
         const observer = new MutationObserver(() => {
-            const inHospital = startHospitalMonitor();
             ensureControlPanel();
-            if (inHospital) return;
+            if (isHospitalStatus()) return;
             scheduleMaybeMaintain();
             checkAttackState();
         });
         observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 
-        const currentValues = getVaultValues();
-        lastVaultState = currentValues;
-        updateMaintainInfo(currentValues);
-        checkAttackState();
+        if (!isHospitalStatus()) {
+            const currentValues = getVaultValues();
+            lastVaultState = currentValues;
+            updateMaintainInfo(currentValues);
+            checkAttackState();
 
-        if (CONFIG.autoMaintainEnabled) {
-            autoMaintain = true;
-            maintainCashOnHand();
+            if (CONFIG.autoMaintainEnabled) {
+                autoMaintain = true;
+                maintainCashOnHand();
+            }
         }
     };
 
