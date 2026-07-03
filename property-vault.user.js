@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Property Vault Auto Withdraw/Deposit
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.2
 // @description  Maintain a target cash-on-hand value by auto depositing or withdrawing from the property vault.
 // @author       GitHub Copilot
 // @match        https://www.torn.com/properties.php*
@@ -12,7 +12,65 @@
 (function() {
     'use strict';
 
+    class TornAPI {
+
+        constructor(apiKey) {
+            this.apiKey = apiKey;
+            this.baseUrl = "https://api.torn.com";
+        }
+
+        async request(section, selections) {
+
+            const url = `${this.baseUrl}/${section}/?selections=${selections}&key=${this.apiKey}`;
+
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            if (data.error) {
+                throw new Error(`[${data.error.code}] ${data.error.error}`);
+            }
+
+            return data;
+        }
+
+        async getTravelStatus() {
+
+            const data = await this.request("user", "basic,travel");
+
+            // If there is no travel object, you're in Torn
+            if (!data.travel) {
+                return {
+                    traveling: false,
+                    destination: "Torn",
+                    minutesRemaining: 0,
+                    secondsRemaining: 0,
+                    status: data.status?.state
+                };
+            }
+
+            const seconds = Number(data.travel.time_left || 0);
+
+            return {
+                traveling: seconds > 0,
+                destination: data.travel.destination,
+                method: data.travel.method,
+                departed: data.travel.departed,
+                arrivalTimestamp: data.travel.timestamp,
+                minutesRemaining: Math.ceil(seconds / 60),
+                secondsRemaining: seconds,
+                status: data.status?.state
+            };
+        }
+
+    }
+
     const STORAGE_KEY = 'tornVaultAutoSettings';
+    const api = new TornAPI("v6Yo75UQIYvWYrhT");
 
     const loadSettings = (defaults) => {
         try {
@@ -59,6 +117,7 @@
     let lastHospitalState = false;
     const TRAVEL_CHECK_INTERVAL_MS = 5000; // Check every 5 seconds for travel status
     let travelingCheckInterval = null;
+    let travelCountdownInterval = null; // For the countdown logging
 
     const getNodeByXPath = (xpath) => {
         const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
@@ -115,7 +174,7 @@
             postAttackRecoveryUntil = 0;
             lastAttackState = false;
             console.log('[Vault Script] Post-attack recovery period complete, flag reset');
-            
+
             if (autoMaintain) {
                 console.log('[Vault Script] Resuming maintenance after recovery');
                 maintainCashOnHand();
@@ -129,14 +188,14 @@
         const currentState = getAttackStateFromXPath();
         if (currentState && !lastAttackState) {
             console.log('[Vault Script] Attack detected');
-            
+
             // Immediately clear the class to reset detection state
             const node = document.querySelector(ATTACK_SELECTOR);
             if (node) {
                 node.className = '';
                 console.log('[Vault Script] Cleared effectRoot class on attack detection');
             }
-            
+
             // Set recovery period to block maintenance
             postAttackRecoveryUntil = Date.now() + ATTACK_DEPOSIT_COOLDOWN;
             console.log('[Vault Script] Post-attack recovery enabled for', ATTACK_DEPOSIT_COOLDOWN / 1000, 'seconds');
@@ -158,12 +217,57 @@
         return document.querySelector('li[class*="icon15"]') !== null;
     };
 
-    const startHospitalMonitor = () => {
+    const startHospitalMonitor = async () => {
         const hospitalActive = isHospitalStatus();
-        const isTraveling = document.querySelector('.info-msg.border-round').textContent.includes('while you\'re traveling.');
+        const travelingMsg = document.querySelector('.info-msg.border-round');
+        const isTraveling = travelingMsg && travelingMsg.textContent.includes('while you\'re traveling.');
+
         if (hospitalActive || isTraveling) {
             lastHospitalState = true;
             if (!hospitalCheckInterval) {
+
+                if(isTraveling && !travelingCheckInterval) {
+                    const travel = await api.getTravelStatus();
+                    const travelTimeMs = travel.secondsRemaining * 1000;
+
+                    console.log(`[Vault Script] Traveling detected. Destination: ${travel.destination}. Will reload in ${travel.secondsRemaining} seconds (${travel.minutesRemaining} minutes)`);
+
+                    // Start countdown logging in console
+                    let countdown = travel.secondsRemaining;
+                    if (travelCountdownInterval) {
+                        clearInterval(travelCountdownInterval);
+                    }
+                    travelCountdownInterval = setInterval(() => {
+                        if (countdown <= 0) {
+                            clearInterval(travelCountdownInterval);
+                            travelCountdownInterval = null;
+                            console.log('[Vault Script] Travel countdown complete. Reloading now...');
+                            return;
+                        }
+                        countdown--;
+                        if (countdown > 0) {
+                            console.log(`[Vault Script] Travel reload countdown: ${countdown} seconds remaining...`);
+                        } else {
+                            console.log('[Vault Script] Travel time expired. Reloading page...');
+                        }
+                    }, 1000);
+
+                    travelingCheckInterval = setInterval(() => {
+                        if (!document.querySelector('.info-msg.border-round')?.textContent.includes('while you\'re traveling.')) {
+                            clearInterval(travelingCheckInterval);
+                            travelingCheckInterval = null;
+                            if (travelCountdownInterval) {
+                                clearInterval(travelCountdownInterval);
+                                travelCountdownInterval = null;
+                            }
+                            console.log('[Vault Script] No longer traveling. Reloading page...');
+                            location.reload();
+                        }
+                    }, TRAVEL_CHECK_INTERVAL_MS);
+
+                    return;
+                }
+
                 console.log('[Vault Script] Hospital status detected. Pausing automation and waiting to retry every', HOSPITAL_CHECK_INTERVAL_MS / 1000, 'seconds.');
                 hospitalCheckInterval = setInterval(() => {
                     if (isHospitalStatus()) {
@@ -176,15 +280,6 @@
                     location.reload();
                 }, HOSPITAL_CHECK_INTERVAL_MS);
             }
-            if(isTraveling && !travelingCheckInterval) {
-                travelingCheckInterval = setInterval(() => {
-                    if (!isTraveling) {
-                        clearInterval(travelingCheckInterval);
-                        travelingCheckInterval = null;
-                        location.reload();
-                    }
-                }, TRAVEL_CHECK_INTERVAL_MS); // Check every 5 seconds
-            }
             return true;
         }
 
@@ -194,7 +289,11 @@
                 clearInterval(hospitalCheckInterval);
                 hospitalCheckInterval = null;
             }
-            console.log('[Vault Script] Hospital status just cleared. Reloading page to resume automation.');
+            if (travelCountdownInterval) {
+                clearInterval(travelCountdownInterval);
+                travelCountdownInterval = null;
+            }
+            console.log('[Vault Script] Hospital/travel status just cleared. Reloading page to resume automation.');
             location.reload();
             return true;
         }
