@@ -545,11 +545,26 @@
   };
 
   const buildControlPanel = () => {
-    // Prefer .vault-wrap (vault form area, present when vault is accessible — works on mobile).
-    // Fall back to .content-title (page header, always present including hospital/travel state).
     const vaultWrap = document.querySelector(".vault-wrap");
-    const contentTitle = document.querySelector(".content-title");
-    const anchor = vaultWrap || contentTitle;
+    const inHospital = isHospitalStatus();
+    const travelingMsg = document.querySelector(".info-msg.border-round");
+    const isTraveling = !!travelingMsg?.textContent.includes("traveling");
+
+    let anchor, insertBeforeAnchor;
+
+    if (vaultWrap) {
+      // Normal state: vault accessible — insert before the vault form (v1.1 position)
+      anchor = vaultWrap;
+      insertBeforeAnchor = true;
+    } else if (inHospital || isTraveling) {
+      // Hospital/travel: vault form is genuinely absent — fall back to page title
+      anchor = document.querySelector(".content-title");
+      insertBeforeAnchor = false;
+    } else {
+      // Vault section hasn't loaded yet — wait for the MutationObserver to retry
+      return;
+    }
+
     if (!anchor) return;
 
     const existing = document.getElementById(PANEL_ID);
@@ -588,12 +603,10 @@
             </div>
         `;
 
-    if (vaultWrap) {
-      // Insert before the vault form (matches original v1.1 position — visible on mobile)
-      vaultWrap.parentNode.insertBefore(panel, vaultWrap);
+    if (insertBeforeAnchor) {
+      anchor.parentNode.insertBefore(panel, anchor);
     } else {
-      // Insert after the page title (hospital/travel state — no vault form present)
-      contentTitle.parentNode.insertBefore(panel, contentTitle.nextSibling);
+      anchor.parentNode.insertBefore(panel, anchor.nextSibling);
     }
 
     const targetInput = panel.querySelector("#tm-target-cash");
@@ -632,8 +645,11 @@
   };
 
   const ensureControlPanel = () => {
-    const anchor = document.querySelector(".vault-wrap") || document.querySelector(".content-title");
-    if (!anchor) return;
+    const hasVault = !!document.querySelector(".vault-wrap");
+    const inHospital = isHospitalStatus();
+    const isTraveling = !!document.querySelector(".info-msg.border-round")?.textContent.includes("traveling");
+    // Only attempt injection when the page state is known (vault loaded, or definitively hospital/travel)
+    if (!hasVault && !inHospital && !isTraveling) return;
     if (!document.getElementById(PANEL_ID)) {
       buildControlPanel();
     }
