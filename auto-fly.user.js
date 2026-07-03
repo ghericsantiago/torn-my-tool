@@ -4,9 +4,8 @@
 // @version      1.0
 // @description  Auto-fly to abroad on Torn with an injected UI (settings saved to localStorage)
 // @author       GitHub Copilot
+// @match        https://www.torn.com/*
 // @match        https://www.torn.com/
-// @match        https://www.torn.com/index.php
-// @match        https://www.torn.com/page.php?sid=travel*
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
@@ -384,10 +383,13 @@
             </div>
         `;
 
-    // On the travel page insert inside the wrapper (top); everywhere else insert
-    // AFTER the anchor element as a sibling so it isn't hidden inside the title div.
+    // Travel page: insert at top of the wrapper container.
+    // Other pages: insert after the anchor as a sibling.
+    // Fallback (document.body): prepend directly to body — never try parentNode of body.
     if (onTravel && (target.classList.contains("wrapper") || target.id === "travel-root")) {
       target.insertBefore(panel, target.firstChild);
+    } else if (target === document.body) {
+      document.body.insertAdjacentElement("afterbegin", panel);
     } else {
       target.parentNode.insertBefore(panel, target.nextSibling);
     }
@@ -888,7 +890,7 @@
   } catch (e) {}
   // ensure UI injection on DOM changes (in case SPA renders after load)
   const uiObserver = new MutationObserver(() => injectUI());
-  uiObserver.observe(document.body, { childList: true, subtree: true });
+  uiObserver.observe(document.documentElement, { childList: true, subtree: true });
 
   // Start timer
   startTimer();
