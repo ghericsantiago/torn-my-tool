@@ -361,6 +361,7 @@
     if (isMobile()) {
       // Floating action button — appended directly to body, outside any React container
       if (document.getElementById("tm-autofly-fab")) return;
+      console.log("[AutoFly] mobile detected, injecting FAB");
 
       const fab = document.createElement("button");
       fab.id = "tm-autofly-fab";
@@ -376,6 +377,7 @@
         "touch-action:manipulation",
       ].join(";");
       document.body.appendChild(fab);
+      console.log("[AutoFly] FAB appended to body");
 
       // Backdrop + bottom sheet
       const backdrop = document.createElement("div");
@@ -930,12 +932,23 @@
     }
   }
 
+  console.log("[AutoFly] script starting. mobile=" + isMobile() + " ua=" + navigator.userAgent.slice(0, 80));
+
   // Run on load
   try {
     injectUI();
   } catch (e) {
     console.error("[AutoFly] injectUI failed:", e);
   }
+
+  // Belt-and-suspenders: re-inject FAB every second if it disappears (handles aggressive SPA re-renders on mobile)
+  setInterval(() => {
+    if (isMobile() && !document.getElementById("tm-autofly-fab")) {
+      console.log("[AutoFly] FAB missing, re-injecting");
+      try { injectUI(); } catch (e) { console.error("[AutoFly] re-inject failed:", e); }
+    }
+  }, 1000);
+
   // ensure UI injection on DOM changes (in case SPA renders after load)
   const uiObserver = new MutationObserver(() => {
     // On mobile re-inject if both FAB and panel are gone
