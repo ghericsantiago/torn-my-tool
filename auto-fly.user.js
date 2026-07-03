@@ -321,42 +321,17 @@
     );
   }
 
+  function isMobile() {
+    return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || window.innerWidth < 768;
+  }
+
   function injectUI() {
-    // only inject once
     if (document.getElementById("tm-autofly-panel")) return;
 
-    // Detect travel page by DOM presence, not URL (works under hash routing on mobile)
-    const onTravel = isTravelPage();
-    const target = onTravel
-      ? document.querySelector("#travel-root .wrapper") ||
-        document.querySelector("#travel-root") ||
-        document.querySelector(".content-title") ||
-        document.querySelector("main") ||
-        document.querySelector('[role="main"]') ||
-        document.querySelector(".maincon") ||
-        document.body
-      : document.querySelector(".content-title") ||
-        document.querySelector("main") ||
-        document.querySelector('[role="main"]') ||
-        document.querySelector(".maincon") ||
-        document.body;
-    if (!target) return;
-
+    // Build the shared panel element
     const panel = document.createElement("div");
     panel.id = "tm-autofly-panel";
-    panel.style.cssText = [
-      "background:#1a1a1a",
-      "border:1px solid #444",
-      "border-radius:8px",
-      "color:#eee",
-      "padding:12px",
-      "margin:10px 0",
-      "font-family:Arial,sans-serif",
-      "font-size:13px",
-      "box-sizing:border-box",
-      "width:100%",
-      "max-width:100%",
-    ].join(";");
+    panel.style.cssText = "color:#eee;font-family:Arial,sans-serif;font-size:13px;box-sizing:border-box;width:100%;";
     panel.innerHTML = `
             <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; box-sizing:border-box; width:100%;">
                 <strong style="flex:1 1 100%;">Torn Auto Fly Abroad</strong>
@@ -383,15 +358,86 @@
             </div>
         `;
 
-    // Travel page: insert at top of the wrapper container.
-    // Other pages: insert after the anchor as a sibling.
-    // Fallback (document.body): prepend directly to body — never try parentNode of body.
-    if (onTravel && (target.classList.contains("wrapper") || target.id === "travel-root")) {
-      target.insertBefore(panel, target.firstChild);
-    } else if (target === document.body) {
-      document.body.insertAdjacentElement("afterbegin", panel);
+    if (isMobile()) {
+      // Floating action button — appended directly to body, outside any React container
+      if (document.getElementById("tm-autofly-fab")) return;
+
+      const fab = document.createElement("button");
+      fab.id = "tm-autofly-fab";
+      fab.innerHTML = "&#9992;"; // ✈
+      fab.style.cssText = [
+        "position:fixed", "bottom:24px", "right:16px",
+        "width:52px", "height:52px", "border-radius:50%",
+        "background:#1a1a1a", "border:2px solid #555",
+        "color:#eee", "font-size:26px", "line-height:1",
+        "z-index:999999", "cursor:pointer",
+        "display:flex", "align-items:center", "justify-content:center",
+        "box-shadow:0 3px 10px rgba(0,0,0,0.6)",
+        "touch-action:manipulation",
+      ].join(";");
+      document.body.appendChild(fab);
+
+      // Backdrop + bottom sheet
+      const backdrop = document.createElement("div");
+      backdrop.id = "tm-autofly-modal";
+      backdrop.style.cssText = [
+        "position:fixed", "inset:0",
+        "background:rgba(0,0,0,0.65)",
+        "z-index:999998", "display:none",
+        "align-items:flex-end",
+      ].join(";");
+
+      const sheet = document.createElement("div");
+      sheet.style.cssText = [
+        "background:#1a1a1a", "border:1px solid #444",
+        "border-radius:16px 16px 0 0",
+        "padding:16px", "width:100%",
+        "box-sizing:border-box",
+        "max-height:80vh", "overflow-y:auto",
+      ].join(";");
+
+      const handle = document.createElement("div");
+      handle.style.cssText = "width:40px;height:4px;background:#555;border-radius:2px;margin:0 auto 14px;";
+      sheet.appendChild(handle);
+      sheet.appendChild(panel);
+      backdrop.appendChild(sheet);
+      document.body.appendChild(backdrop);
+
+      const openModal = () => { backdrop.style.display = "flex"; };
+      const closeModal = () => { backdrop.style.display = "none"; };
+      fab.addEventListener("click", () => {
+        backdrop.style.display === "flex" ? closeModal() : openModal();
+      });
+      backdrop.addEventListener("click", (e) => {
+        if (e.target === backdrop) closeModal();
+      });
+
     } else {
-      target.parentNode.insertBefore(panel, target.nextSibling);
+      // Desktop: inline insertion
+      const onTravel = isTravelPage();
+      const target = onTravel
+        ? document.querySelector("#travel-root .wrapper") ||
+          document.querySelector("#travel-root") ||
+          document.querySelector(".content-title") ||
+          document.querySelector("main") ||
+          document.querySelector('[role="main"]') ||
+          document.querySelector(".maincon") ||
+          document.body
+        : document.querySelector(".content-title") ||
+          document.querySelector("main") ||
+          document.querySelector('[role="main"]') ||
+          document.querySelector(".maincon") ||
+          document.body;
+
+      panel.style.cssText += ";background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:12px;margin:10px 0;max-width:100%;";
+
+      if (onTravel && (target.classList.contains("wrapper") || target.id === "travel-root")) {
+        target.insertBefore(panel, target.firstChild);
+      } else if (target === document.body) {
+        document.body.insertAdjacentElement("afterbegin", panel);
+      } else {
+        target.parentNode.insertBefore(panel, target.nextSibling);
+      }
     }
 
     // Populate country selector from detected travel-page countries (if available)
@@ -887,9 +933,20 @@
   // Run on load
   try {
     injectUI();
-  } catch (e) {}
+  } catch (e) {
+    console.error("[AutoFly] injectUI failed:", e);
+  }
   // ensure UI injection on DOM changes (in case SPA renders after load)
-  const uiObserver = new MutationObserver(() => injectUI());
+  const uiObserver = new MutationObserver(() => {
+    // On mobile re-inject if both FAB and panel are gone
+    if (isMobile()) {
+      if (!document.getElementById("tm-autofly-fab") && !document.getElementById("tm-autofly-panel")) {
+        injectUI();
+      }
+    } else {
+      injectUI();
+    }
+  });
   uiObserver.observe(document.documentElement, { childList: true, subtree: true });
 
   // Start timer
