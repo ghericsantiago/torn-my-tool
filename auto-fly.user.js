@@ -318,58 +318,68 @@
     }
   }
 
+  function isTravelPage() {
+    return !!(
+      document.querySelector("#travel-root") ||
+      (location.pathname.includes("page.php") && location.search.includes("sid=travel"))
+    );
+  }
+
   function injectUI() {
     // only inject once
     if (document.getElementById("tm-autofly-panel")) return;
 
-    // Try multiple selectors for different page layouts
-    // Prioritize travel page container if we're on the travel page
-    const target =
-      location.pathname.includes("page.php") &&
-      location.search.includes("sid=travel")
-        ? document.querySelector("#travel-root .wrapper") ||
-          document.querySelector("#travel-root") ||
-          document.querySelector(".content-title") ||
-          document.querySelector("main") ||
-          document.querySelector('[role="main"]') ||
-          document.querySelector(".maincon") ||
-          document.body
-        : document.querySelector(".content-title") ||
-          document.querySelector("main") ||
-          document.querySelector('[role="main"]') ||
-          document.querySelector(".maincon") ||
-          document.body;
+    // Detect travel page by DOM presence, not URL (works under hash routing on mobile)
+    const onTravel = isTravelPage();
+    const target = onTravel
+      ? document.querySelector("#travel-root .wrapper") ||
+        document.querySelector("#travel-root") ||
+        document.querySelector(".content-title") ||
+        document.querySelector("main") ||
+        document.querySelector('[role="main"]') ||
+        document.querySelector(".maincon") ||
+        document.body
+      : document.querySelector(".content-title") ||
+        document.querySelector("main") ||
+        document.querySelector('[role="main"]') ||
+        document.querySelector(".maincon") ||
+        document.body;
     if (!target) return;
 
     const panel = document.createElement("div");
     panel.id = "tm-autofly-panel";
-    panel.style.background = "#1a1a1a";
-    panel.style.border = "1px solid #444";
-    panel.style.borderRadius = "8px";
-    panel.style.color = "#eee";
-    panel.style.padding = "12px";
-    panel.style.margin = "10px 0";
-    panel.style.fontFamily = "Arial, sans-serif";
-    panel.style.fontSize = "13px";
+    panel.style.cssText = [
+      "background:#1a1a1a",
+      "border:1px solid #444",
+      "border-radius:8px",
+      "color:#eee",
+      "padding:12px",
+      "margin:10px 0",
+      "font-family:Arial,sans-serif",
+      "font-size:13px",
+      "box-sizing:border-box",
+      "width:100%",
+      "max-width:100%",
+    ].join(";");
     panel.innerHTML = `
-            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; box-sizing:border-box; width:100%;">
                 <strong style="flex:1 1 100%;">Torn Auto Fly Abroad</strong>
-                <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+                <label style="display:flex; align-items:center; gap:6px;">
                     <input id="tm-autofly-fly-out" type="checkbox"> Auto-fly from Torn
                 </label>
-                <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+                <label style="display:flex; align-items:center; gap:6px;">
                     <input id="tm-autofly-fly-back" type="checkbox"> Auto-fly back
                 </label>
-                <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+                <label style="display:flex; align-items:center; gap:6px;">
                     <input id="tm-autofly-skip-warnings" type="checkbox"> Skip warnings
                 </label>
-                <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+                <label style="display:flex; align-items:center; gap:6px;">
                     Interval (min):
-                    <input id="tm-autofly-interval" type="number" min="1" value="${settings.intervalMinutes || 5}" style="width:70px; padding:4px 6px; border-radius:4px; border:1px solid #555; background:#111; color:#eee;">
+                    <input id="tm-autofly-interval" type="number" min="1" value="${settings.intervalMinutes || 5}" style="width:60px; padding:4px 6px; border-radius:4px; border:1px solid #555; background:#111; color:#eee; box-sizing:border-box;">
                 </label>
-                <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+                <label style="display:flex; align-items:center; gap:6px; flex:1 1 auto; min-width:0;">
                     Destination:
-                    <select id="tm-autofly-country-select" style="width:180px; padding:4px 6px; border-radius:4px; border:1px solid #555; background:#111; color:#eee;">
+                    <select id="tm-autofly-country-select" style="flex:1; min-width:0; padding:4px 6px; border-radius:4px; border:1px solid #555; background:#111; color:#eee; box-sizing:border-box;">
                         <option value="">Any</option>
                         ${VALID_DESTINATIONS.map((d) => `<option>${d}</option>`).join("")}
                     </select>
@@ -377,15 +387,12 @@
             </div>
         `;
 
-    // Insert panel at the top of the target (especially important for travel page)
-    if (
-      (location.pathname.includes("page.php") &&
-        location.search.includes("sid=travel")) ||
-      target.id === "travel-root"
-    ) {
+    // On the travel page insert inside the wrapper (top); everywhere else insert
+    // AFTER the anchor element as a sibling so it isn't hidden inside the title div.
+    if (onTravel && (target.classList.contains("wrapper") || target.id === "travel-root")) {
       target.insertBefore(panel, target.firstChild);
     } else {
-      target.appendChild(panel);
+      target.parentNode.insertBefore(panel, target.nextSibling);
     }
 
     // Populate country selector from detected travel-page countries (if available)
@@ -393,10 +400,7 @@
       const sel = document.getElementById("tm-autofly-country-select");
       if (sel) {
         let available = [];
-        if (
-          location.pathname.includes("page.php") &&
-          location.search.includes("sid=travel")
-        ) {
+        if (isTravelPage()) {
           available = getAvailableCountries();
           if (available && available.length) {
             try {
