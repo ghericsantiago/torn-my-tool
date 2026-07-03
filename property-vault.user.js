@@ -354,8 +354,9 @@
     };
 
     const buildControlPanel = () => {
-        const wrap = document.querySelector('.vault-wrap');
-        if (!wrap) return;
+        const vaultWrap = document.querySelector('.vault-wrap');
+        const anchor = vaultWrap || document.querySelector('.content-title');
+        if (!anchor) return;
 
         const existing = document.getElementById(PANEL_ID);
         if (existing) {
@@ -392,7 +393,11 @@
             </div>
         `;
 
-        wrap.parentNode.insertBefore(panel, wrap);
+        if (vaultWrap) {
+            anchor.parentNode.insertBefore(panel, anchor);
+        } else {
+            anchor.parentNode.insertBefore(panel, anchor.nextSibling);
+        }
 
         const targetInput = panel.querySelector('#tm-target-cash');
         const autoMaintainInput = panel.querySelector('#tm-auto-maintain');
@@ -422,19 +427,21 @@
     };
 
     const ensureControlPanel = () => {
-        const wrap = document.querySelector('.vault-wrap');
-        if (!wrap) return;
+        const anchor = document.querySelector('.vault-wrap') || document.querySelector('.content-title');
+        if (!anchor) return;
         if (!document.getElementById(PANEL_ID)) {
             buildControlPanel();
         }
     };
 
     const init = () => {
-        if (startHospitalMonitor()) return;
+        const inHospital = startHospitalMonitor();
         ensureControlPanel();
+        if (inHospital) return;
         const observer = new MutationObserver(() => {
-            if (startHospitalMonitor()) return;
+            const inHospital = startHospitalMonitor();
             ensureControlPanel();
+            if (inHospital) return;
             scheduleMaybeMaintain();
             checkAttackState();
         });
