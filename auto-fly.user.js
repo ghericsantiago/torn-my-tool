@@ -117,7 +117,7 @@
     async function tryAutoFly(){
         // Give the page time to fully load on initial execution
         await wait(500);
-        
+
         settings = loadSettings();
         if(!settings.enabled) return;
         // If already abroad, attempt shopping routine first
@@ -152,7 +152,7 @@
                 await wait(1500);
             } else if(setOk){
                 // give UI a moment to update after selection
-                await wait(700);
+                await wait(10000);
             }
         }
 
@@ -160,6 +160,7 @@
         if(clickFlyControl()){
             sessionStorage.setItem(COOLDOWN_KEY, String(Date.now()));
             console.log('[AutoFly] Fly control clicked');
+            location.reload();
             return;
         }
 
@@ -167,6 +168,7 @@
         if(settings.skipWarnings && clickFlyContinueControl()){
             sessionStorage.setItem(COOLDOWN_KEY, String(Date.now()));
             console.log('[AutoFly] Continue control clicked (skip warnings)');
+            location.reload();
             return;
         }
 
@@ -340,7 +342,7 @@
     async function clickTravelDestination(countryName, retries = 3){
         if(!countryName) return false;
         const low = countryName.toLowerCase();
-        
+
         // Find the radio button with matching country in aria-label
         const radioButtons = Array.from(document.querySelectorAll('input[type="radio"][name="destination"]'));
         for(const radio of radioButtons){
@@ -356,14 +358,14 @@
                 }
             }
         }
-        
+
         // Radio buttons not found - retry if we have retries left
         if(retries > 0){
             console.log('[AutoFly] Radio buttons not found, retrying... (' + retries + ' retries left)');
             await wait(300);
             return clickTravelDestination(countryName, retries - 1);
         }
-        
+
         return false;
     }
 
