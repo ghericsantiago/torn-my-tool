@@ -228,28 +228,29 @@
 
                 if(isTraveling && !travelingCheckInterval) {
                     const travel = await api.getTravelStatus();
-                    const travelTimeMs = travel.secondsRemaining * 1000;
+
+                    if (travel.secondsRemaining <= 0) {
+                        console.log('[Vault Script] Travel already complete. Reloading now...');
+                        location.reload();
+                        return;
+                    }
 
                     console.log(`[Vault Script] Traveling detected. Destination: ${travel.destination}. Will reload in ${travel.secondsRemaining} seconds (${travel.minutesRemaining} minutes)`);
 
-                    // Start countdown logging in console
                     let countdown = travel.secondsRemaining;
                     if (travelCountdownInterval) {
                         clearInterval(travelCountdownInterval);
                     }
                     travelCountdownInterval = setInterval(() => {
+                        countdown--;
                         if (countdown <= 0) {
                             clearInterval(travelCountdownInterval);
                             travelCountdownInterval = null;
-                            console.log('[Vault Script] Travel countdown complete. Reloading now...');
+                            console.log('[Vault Script] Travel time expired. Reloading page...');
+                            location.reload();
                             return;
                         }
-                        countdown--;
-                        if (countdown > 0) {
-                            console.log(`[Vault Script] Travel reload countdown: ${countdown} seconds remaining...`);
-                        } else {
-                            console.log('[Vault Script] Travel time expired. Reloading page...');
-                        }
+                        console.log(`[Vault Script] Travel reload countdown: ${countdown} seconds remaining...`);
                     }, 1000);
 
                     travelingCheckInterval = setInterval(() => {
