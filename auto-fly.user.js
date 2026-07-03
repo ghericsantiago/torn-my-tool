@@ -70,11 +70,11 @@
   function loadSettings() {
     try {
       return Object.assign(
-        { enabled: false, intervalMinutes: 5, skipWarnings: false },
+        { flyOutEnabled: false, flyBackEnabled: false, intervalMinutes: 5, skipWarnings: false },
         JSON.parse(localStorage.getItem(KEY) || "{}"),
       );
     } catch (e) {
-      return { enabled: false, intervalMinutes: 5, skipWarnings: false };
+      return { flyOutEnabled: false, flyBackEnabled: false, intervalMinutes: 5, skipWarnings: false };
     }
   }
   function saveSettings(s) {
@@ -203,14 +203,16 @@
     await wait(500);
 
     settings = loadSettings();
-    if (!settings.enabled) return;
-    // If already abroad, attempt shopping routine first
+    if (!settings.flyOutEnabled && !settings.flyBackEnabled) return;
+    // If already abroad, attempt shopping/fly-back routine
     try {
       const body = document.body || {};
       if (body.dataset && body.dataset.abroad === "true") {
-        // run shopping routine (will navigate home when limit reached)
-        await processAbroadShopping();
-        // don't continue with travel logic while handling abroad shopping
+        if (settings.flyBackEnabled) {
+          await processAbroadShopping();
+        } else {
+          console.log("[AutoFly] Abroad but fly-back is disabled, skipping");
+        }
         return;
       }
     } catch (e) {}
@@ -220,6 +222,10 @@
     }
     if (isAbroadOrTraveling()) {
       console.log("[AutoFly] Already abroad or traveling");
+      return;
+    }
+    if (!settings.flyOutEnabled) {
+      console.log("[AutoFly] Fly-out disabled, skipping travel initiation");
       return;
     }
     // cooldown guard (avoid repeating clicks)
@@ -296,7 +302,7 @@
   function startTimer() {
     stopTimer();
     settings = loadSettings();
-    if (!settings.enabled) return;
+    if (!settings.flyOutEnabled && !settings.flyBackEnabled) return;
     tryAutoFly();
     intervalId = setInterval(
       () => {
@@ -349,7 +355,10 @@
             <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
                 <strong style="flex:1 1 100%;">Torn Auto Fly Abroad</strong>
                 <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
-                    <input id="tm-autofly-enabled" type="checkbox"> Enable auto-fly
+                    <input id="tm-autofly-fly-out" type="checkbox"> Auto-fly from Torn
+                </label>
+                <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+                    <input id="tm-autofly-fly-back" type="checkbox"> Auto-fly back
                 </label>
                 <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
                     <input id="tm-autofly-skip-warnings" type="checkbox"> Skip warnings
@@ -421,12 +430,14 @@
     } catch (e) {}
 
     const $ = (id) => document.getElementById(id);
-    const enabledEl = $("tm-autofly-enabled");
+    const flyOutEl = $("tm-autofly-fly-out");
+    const flyBackEl = $("tm-autofly-fly-back");
     const skipWarningsEl = $("tm-autofly-skip-warnings");
     const intervalEl = $("tm-autofly-interval");
     const selEl = $("tm-autofly-country-select");
-    if (enabledEl) {
-      enabledEl.checked = !!settings.enabled;
+    if (flyOutEl) {
+      flyOutEl.checked = !!settings.flyOutEnabled;
+      if (flyBackEl) flyBackEl.checked = !!settings.flyBackEnabled;
       if (skipWarningsEl) skipWarningsEl.checked = !!settings.skipWarnings;
       intervalEl.value = settings.intervalMinutes || 5;
       if (settings.desiredCountry) {
@@ -445,12 +456,20 @@
       }
 
       // Auto-save on changes
-      enabledEl.addEventListener("change", () => {
-        settings.enabled = !!enabledEl.checked;
+      flyOutEl.addEventListener("change", () => {
+        settings.flyOutEnabled = !!flyOutEl.checked;
         saveSettings(settings);
-        if (settings.enabled) startTimer();
+        if (settings.flyOutEnabled || settings.flyBackEnabled) startTimer();
         else stopTimer();
       });
+      if (flyBackEl) {
+        flyBackEl.addEventListener("change", () => {
+          settings.flyBackEnabled = !!flyBackEl.checked;
+          saveSettings(settings);
+          if (settings.flyOutEnabled || settings.flyBackEnabled) startTimer();
+          else stopTimer();
+        });
+      }
       intervalEl.addEventListener("change", () => {
         settings.intervalMinutes = Math.max(1, parseInt(intervalEl.value || 5));
         saveSettings(settings);
@@ -477,8 +496,8 @@
 
           // If auto-fly is enabled, try to click the fly/travel control
           const enabledNow = !!(
-            document.getElementById("tm-autofly-enabled") &&
-            document.getElementById("tm-autofly-enabled").checked
+            document.getElementById("tm-autofly-fly-out") &&
+            document.getElementById("tm-autofly-fly-out").checked
           );
           if (enabledNow) {
             if (clickFlyControl()) {
