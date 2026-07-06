@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Torn Property Vault Auto Withdraw/Deposit
 // @namespace    http://tampermonkey.net/
-// @version      1.2
-// @description  Maintain a target cash-on-hand value by auto depositing or withdrawing from the property vault.
+// @version      1.3
+// @description  Maintain a target cash-on-hand value by auto depositing or withdrawing from the property vault. Mobile floating panel supported.
 // @author       GitHub Copilot
 // @match        https://www.torn.com/properties.php*
 // @grant        none
@@ -96,6 +96,8 @@
   });
 
   const PANEL_ID = "tm-vault-panel";
+  const FAB_ID = "tm-vault-fab";
+  const MODAL_ID = "tm-vault-modal";
   let autoMaintain = CONFIG.autoMaintainEnabled;
   let lastVaultState = { cash: null, vault: null };
   let maintainSchedule = null;
@@ -544,38 +546,29 @@
     submitVaultForm("withdraw", withdrawAmount);
   };
 
-  const buildControlPanel = () => {
-    const anchor = document.querySelector(".content-title");
-    if (!anchor) return;
+  const isMobile = () =>
+    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+    window.innerWidth < 768;
 
-    const existing = document.getElementById(PANEL_ID);
-    if (existing) {
-      existing.remove();
-    }
-
+  // Build the shared panel element (controls only). Box/positioning styling is
+  // applied by the desktop (inline) or mobile (bottom-sheet) branch.
+  const buildPanelElement = () => {
     const panel = document.createElement("div");
     panel.id = PANEL_ID;
-    panel.style.background = "#1a1a1a";
-    panel.style.border = "1px solid #444";
-    panel.style.borderRadius = "8px";
-    panel.style.color = "#eee";
-    panel.style.padding = "12px";
-    panel.style.margin = "10px 0";
-    panel.style.fontFamily = "Arial, sans-serif";
-    panel.style.fontSize = "13px";
-
+    panel.style.cssText =
+      "color:#eee;font-family:Arial,sans-serif;font-size:13px;box-sizing:border-box;width:100%;";
     panel.innerHTML = `
-            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; box-sizing:border-box; width:100%;">
                 <strong style="flex:1 1 100%;">${CONFIG.insertionLabel}</strong>
-                <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+                <label style="display:flex; align-items:center; gap:6px;">
                     Target cash on hand:
-                    <input id="tm-target-cash" type="text" value="${formatNumber(parseAmount(CONFIG.targetCashOnHand))}" style="width:110px; padding:4px 6px; border-radius:4px; border:1px solid #555; background:#111; color:#eee;">
+                    <input id="tm-target-cash" type="text" value="${formatNumber(parseAmount(CONFIG.targetCashOnHand))}" style="width:110px; padding:4px 6px; border-radius:4px; border:1px solid #555; background:#111; color:#eee; box-sizing:border-box;">
                 </label>
-                <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+                <label style="display:flex; align-items:center; gap:6px;">
                     <input id="tm-auto-maintain" type="checkbox"${CONFIG.autoMaintainEnabled ? " checked" : ""}>
                     Auto maintain
                 </label>
-                <label style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
+                <label style="display:flex; align-items:center; gap:6px;">
                     <input id="tm-auto-attack-deposit" type="checkbox"${CONFIG.autoAttackDepositEnabled ? " checked" : ""}>
                     Deposit on attack
                 </label>
@@ -583,15 +576,17 @@
                 <span id="tm-travel-countdown" style="display:none; color:#f0a500; font-weight:bold; white-space:nowrap;"></span>
             </div>
         `;
+    return panel;
+  };
 
-    anchor.parentNode.insertBefore(panel, anchor.nextSibling);
-
-    const targetInput = panel.querySelector("#tm-target-cash");
-    const autoMaintainInput = panel.querySelector("#tm-auto-maintain");
-    const autoAttackDepositInput = panel.querySelector(
-      "#tm-auto-attack-deposit",
+  const wireControlPanel = () => {
+    const targetInput = document.getElementById("tm-target-cash");
+    const autoMaintainInput = document.getElementById("tm-auto-maintain");
+    const autoAttackDepositInput = document.getElementById(
+      "tm-auto-attack-deposit",
     );
-    targetInput?.addEventListener("change", () => {
+    if (!targetInput) return;
+    targetInput.addEventListener("change", () => {
       CONFIG.targetCashOnHand = targetInput.value;
       saveSettings();
       console.log(
@@ -621,11 +616,106 @@
     });
   };
 
+  const buildControlPanel = () => {
+    if (isMobile()) {
+      // Floating action button + backdrop + bottom sheet, appended to body.
+      if (document.getElementById(FAB_ID)) return;
+
+      const panel = buildPanelElement();
+
+      const fab = document.createElement("button");
+      fab.id = FAB_ID;
+      fab.innerHTML = "&#127974;"; // 🏦
+      fab.style.cssText = [
+        "position:fixed",
+        "bottom:24px",
+        "right:16px",
+        "width:52px",
+        "height:52px",
+        "border-radius:50%",
+        "background:#1a1a1a",
+        "border:2px solid #555",
+        "color:#eee",
+        "font-size:24px",
+        "line-height:1",
+        "z-index:999999",
+        "cursor:pointer",
+        "display:flex",
+        "align-items:center",
+        "justify-content:center",
+        "box-shadow:0 3px 10px rgba(0,0,0,0.6)",
+        "touch-action:manipulation",
+      ].join(";");
+      document.body.appendChild(fab);
+
+      const backdrop = document.createElement("div");
+      backdrop.id = MODAL_ID;
+      backdrop.style.cssText = [
+        "position:fixed",
+        "inset:0",
+        "background:rgba(0,0,0,0.65)",
+        "z-index:999998",
+        "display:none",
+        "align-items:flex-end",
+      ].join(";");
+
+      const sheet = document.createElement("div");
+      sheet.style.cssText = [
+        "background:#1a1a1a",
+        "border:1px solid #444",
+        "border-radius:16px 16px 0 0",
+        "padding:16px",
+        "width:100%",
+        "box-sizing:border-box",
+        "max-height:80vh",
+        "overflow-y:auto",
+      ].join(";");
+
+      const handle = document.createElement("div");
+      handle.style.cssText =
+        "width:40px;height:4px;background:#555;border-radius:2px;margin:0 auto 14px;";
+      sheet.appendChild(handle);
+      sheet.appendChild(panel);
+      backdrop.appendChild(sheet);
+      document.body.appendChild(backdrop);
+
+      const open = () => (backdrop.style.display = "flex");
+      const close = () => (backdrop.style.display = "none");
+      fab.addEventListener("click", () =>
+        backdrop.style.display === "flex" ? close() : open(),
+      );
+      backdrop.addEventListener("click", (e) => {
+        if (e.target === backdrop) close();
+      });
+    } else {
+      // Desktop: inline insertion after the content title.
+      const anchor = document.querySelector(".content-title");
+      if (!anchor) return;
+      document.getElementById(PANEL_ID)?.remove();
+
+      const panel = buildPanelElement();
+      panel.style.cssText +=
+        ";background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:12px;margin:10px 0;max-width:100%;";
+      anchor.parentNode.insertBefore(panel, anchor.nextSibling);
+    }
+
+    wireControlPanel();
+  };
+
   const ensureControlPanel = () => {
-    const anchor = document.querySelector(".content-title");
-    if (!anchor) return;
-    if (!document.getElementById(PANEL_ID)) {
-      buildControlPanel();
+    if (isMobile()) {
+      if (
+        !document.getElementById(FAB_ID) &&
+        !document.getElementById(PANEL_ID)
+      ) {
+        buildControlPanel();
+      }
+    } else {
+      const anchor = document.querySelector(".content-title");
+      if (!anchor) return;
+      if (!document.getElementById(PANEL_ID)) {
+        buildControlPanel();
+      }
     }
   };
 
@@ -644,6 +734,15 @@
       subtree: true,
       characterData: true,
     });
+
+    // Belt-and-suspenders: re-inject the mobile FAB if a re-render removes it.
+    if (isMobile()) {
+      setInterval(() => {
+        if (!document.getElementById(FAB_ID)) {
+          ensureControlPanel();
+        }
+      }, 1000);
+    }
 
     if (!isHospitalStatus()) {
       const currentValues = getVaultValues();
