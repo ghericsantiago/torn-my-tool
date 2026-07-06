@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Auto Fly Abroad
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  Auto-fly to abroad on Torn with an injected UI (settings saved to localStorage)
 // @author       GitHub Copilot
 // @match        https://www.torn.com
@@ -198,6 +198,26 @@
     }
   }
 
+  // After clicking Travel a warning panel with a "Continue" button may appear
+  // (e.g. active OC, booster cooldown). Wait for it and click it. Resolves true
+  // if Continue was clicked, false if none appeared before the timeout.
+  function waitForContinueAndClick(timeout = 5000) {
+    return new Promise((resolve) => {
+      if (clickFlyContinueControl()) return resolve(true);
+      const obs = new MutationObserver(() => {
+        if (clickFlyContinueControl()) {
+          obs.disconnect();
+          resolve(true);
+        }
+      });
+      obs.observe(document.body, { childList: true, subtree: true });
+      setTimeout(() => {
+        obs.disconnect();
+        resolve(false);
+      }, timeout);
+    });
+  }
+
   async function tryAutoFly() {
     // Give the page time to fully load on initial execution
     await wait(500);
@@ -261,33 +281,56 @@
       }
     }
 
-    // on travel page: try to click fly control or wait for it
-    if (clickFlyControl()) {
-      sessionStorage.setItem(COOLDOWN_KEY, String(Date.now()));
-      console.log("[AutoFly] Fly control clicked");
-      location.reload();
-      return;
-    }
-
-    // If not clicked and user opted to skip warnings, try clicking the Continue button
+    // A warning panel with a Continue button may already be showing — handle
+    // it first before (re)clicking Travel.
     if (settings.skipWarnings && clickFlyContinueControl()) {
       sessionStorage.setItem(COOLDOWN_KEY, String(Date.now()));
       console.log("[AutoFly] Continue control clicked (skip warnings)");
+      await wait(500);
       location.reload();
       return;
     }
 
-    // If control not present yet, observe and click when it appears
-    const mo = new MutationObserver((m, o) => {
-      if (
-        clickFlyControl() ||
-        (settings.skipWarnings && clickFlyContinueControl())
-      ) {
-        sessionStorage.setItem(COOLDOWN_KEY, String(Date.now()));
+    // Click the Travel button. On mobile this often reveals a warning panel
+    // with a "Continue" button instead of travelling immediately. Reloading
+    // right after the Travel click would discard that warning, so if skipping
+    // warnings we must wait for Continue and click it BEFORE reloading.
+    if (clickFlyControl()) {
+      sessionStorage.setItem(COOLDOWN_KEY, String(Date.now()));
+      console.log("[AutoFly] Fly control clicked");
+      if (settings.skipWarnings) {
+        const continued = await waitForContinueAndClick(5000);
         console.log(
-          "[AutoFly] Fly/Continue control appeared and was clicked (observer)",
+          continued
+            ? "[AutoFly] Continue clicked after warning"
+            : "[AutoFly] No warning appeared after Travel",
         );
+        await wait(500);
+      }
+      location.reload();
+      return;
+    }
+
+    // If no control present yet, observe and click when it appears.
+    const mo = new MutationObserver(async (m, o) => {
+      // Prefer the warning's Continue button when skipping warnings.
+      if (settings.skipWarnings && clickFlyContinueControl()) {
         o.disconnect();
+        sessionStorage.setItem(COOLDOWN_KEY, String(Date.now()));
+        console.log("[AutoFly] Continue appeared and was clicked (observer)");
+        await wait(500);
+        location.reload();
+        return;
+      }
+      if (clickFlyControl()) {
+        sessionStorage.setItem(COOLDOWN_KEY, String(Date.now()));
+        console.log("[AutoFly] Travel appeared and was clicked (observer)");
+        if (settings.skipWarnings) {
+          // Keep observing so the follow-up Continue warning is caught above.
+          return;
+        }
+        o.disconnect();
+        location.reload();
       }
     });
     mo.observe(document.body, { childList: true, subtree: true });
