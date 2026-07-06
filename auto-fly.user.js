@@ -6,7 +6,7 @@
 // @author       GitHub Copilot
 // @match        https://www.torn.com
 // @match        https://www.torn.com/index.php
-// @match        https://www.torn.com/page.php?sid=travel
+// @match        https://www.torn.com/page.php?sid=travel*
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
@@ -897,76 +897,131 @@
     });
   }
 
-  // Purchase items from SHOPPING_LIST when abroad
+  // After clicking a row's cart/buy button a confirmation panel
+  // (id="item-<id>-buyPanel") opens — Torn's "Abroad Buy No Confirm" feature is
+  // disabled, so the purchase must be confirmed. Wait for the panel's confirm
+  // button and return it (or null if none appears).
+  function waitForBuyConfirm(panelId, timeout = 3000) {
+    const find = () => {
+      const panel = panelId ? document.getElementById(panelId) : null;
+      if (panel && panel.offsetParent !== null) {
+        return (
+          panel.querySelector("button.torn-btn") ||
+          panel.querySelector('button[class*="buyButton" i]') ||
+          panel.querySelector('button[class*="confirm" i]') ||
+          [...panel.querySelectorAll("button")].find((b) =>
+            /buy|confirm|yes/i.test((b.textContent || "").trim()),
+          ) ||
+          null
+        );
+      }
+      return null;
+    };
+    return new Promise((resolve) => {
+      const existing = find();
+      if (existing) return resolve(existing);
+      const obs = new MutationObserver(() => {
+        const f = find();
+        if (f) {
+          obs.disconnect();
+          resolve(f);
+        }
+      });
+      obs.observe(document.body, { childList: true, subtree: true });
+      setTimeout(() => {
+        obs.disconnect();
+        resolve(null);
+      }, timeout);
+    });
+  }
+
+  // Purchase items from SHOPPING_LIST when abroad, THEN travel home.
   async function processAbroadShopping() {
     try {
       console.log("[AutoFly] processing abroad shopping");
 
       const stockTableWrapper = await waitForStockTable();
       if (!stockTableWrapper) {
-        console.group("[AutoFly DIAG] stockTableWrapper missing — copy this block");
-        console.log("body.dataset.abroad:", document.body.dataset.abroad);
-        console.log("body.dataset.traveling:", document.body.dataset.traveling);
-        console.log("body.className:", document.body.className);
-        console.log("SHOPPING_LIST:", JSON.stringify(SHOPPING_LIST));
-        console.log("All [class*=stockTable] elements:", [...document.querySelectorAll('[class*="stockTable"]')].map(e => e.className));
-        console.log("All [class*=wrapper] elements:", [...document.querySelectorAll('[class*="wrapper"]')].map(e => e.className).slice(0, 20));
-        console.groupEnd();
+        console.warn("[AutoFly] stockTableWrapper missing — cannot shop");
         return;
       }
 
-      const rows = stockTableWrapper.querySelectorAll('[class*="row"]');
-      console.log(`[AutoFly DIAG] stockTableWrapper found. Row count: ${rows.length}. SHOPPING_LIST: ${JSON.stringify(SHOPPING_LIST)}`);
+      // Each row is <li><div class="row___…"> with cells addressed by the
+      // stable data-tt-content-type attribute (name/cost/stock/amount/buy).
+      // The column header is a separate itemsHeader___ element (no row___), so
+      // it is naturally excluded.
+      const rows = Array.from(
+        stockTableWrapper.querySelectorAll('li > [class^="row___"]'),
+      );
+      console.log(`[AutoFly] shop rows found: ${rows.length}`);
 
+      let boughtAny = false;
       for (const row of rows) {
-        const cells = row.querySelectorAll('[class*="cell"]');
-        if (cells.length < 7) {
-          console.log(`[AutoFly DIAG] row skipped — only ${cells.length} cells (need 7)`);
-          continue;
-        }
-
-        const nameCell = cells[1];
-        const qtyCell = cells[5];
-        const buyCell = cells[6];
+        const nameCell = row.querySelector('[data-tt-content-type="name"]');
+        const buyCell = row.querySelector('[data-tt-content-type="buy"]');
+        const amountCell = row.querySelector('[data-tt-content-type="amount"]');
+        if (!nameCell || !buyCell) continue;
 
         const itemName = nameCell.textContent.trim();
-        const maxQtyBtn = qtyCell.querySelector("span");
-        const buyBtn = buyCell.querySelector("button");
+        const matched = SHOPPING_LIST.some((w) =>
+          itemName.toLowerCase().includes(w),
+        );
+        if (!matched) continue;
 
-        console.log(`[AutoFly DIAG] row | item="${itemName}" | maxQtyBtn=${!!maxQtyBtn} | buyBtn=${!!buyBtn}`);
+        console.log(`[AutoFly] Buying ${itemName}`);
 
-        for (const want of SHOPPING_LIST) {
-          if (itemName.toLowerCase().includes(want.toLowerCase())) {
-            console.log(`[AutoFly] Buying ${itemName} (matched "${want}")`);
-            console.log(`[AutoFly DIAG] maxQtyBtn el:`, maxQtyBtn, `| buyBtn el:`, buyBtn);
-
-            safeClick(maxQtyBtn);
-            await delay(500);
-
-            safeClick(buyBtn);
-            await delay(500);
-
-            const yesBtn = document.querySelector('[class*="yes"]');
-            console.log(`[AutoFly DIAG] yesBtn el:`, yesBtn);
-            safeClick(yesBtn);
-            await delay(500);
-          }
+        // 1) Fill the maximum amount via the max (wai-btn) button.
+        const maxBtn = (amountCell || row).querySelector(
+          ".input-money-symbol input.wai-btn, .input-money-symbol button, input.wai-btn",
+        );
+        if (maxBtn) {
+          safeClick(maxBtn);
+          await delay(300);
         }
 
-        console.log("[AutoFly] checked:", itemName);
+        // 2) Click the cart/buy button — opens the confirmation panel.
+        const buyBtn = buyCell.querySelector("button");
+        if (!buyBtn) {
+          console.warn("[AutoFly] no buy button for", itemName);
+          continue;
+        }
+        const panelId = buyBtn.getAttribute("aria-controls"); // item-<id>-buyPanel
+        safeClick(buyBtn);
+        await delay(300);
+
+        // 3) Confirm the purchase.
+        const confirmBtn = await waitForBuyConfirm(panelId, 3000);
+        if (confirmBtn) {
+          safeClick(confirmBtn);
+          boughtAny = true;
+          console.log(`[AutoFly] confirmed purchase of ${itemName}`);
+          await delay(600);
+        } else {
+          console.warn(
+            "[AutoFly] buy confirmation not found for",
+            itemName,
+            "(panel:",
+            panelId,
+            ")",
+          );
+        }
       }
 
-      console.log("[AutoFly] Finished shopping. Travelling home...");
+      if (!boughtAny) {
+        console.log(
+          "[AutoFly] No SHOPPING_LIST items available at this destination — nothing bought.",
+        );
+      }
 
+      // Buying finished — now travel home.
+      console.log("[AutoFly] Finished shopping. Travelling home...");
       const travelHomeBtn = document.querySelector(
         '[aria-controls="travel-home-panel"]',
       );
       safeClick(travelHomeBtn);
-
       await delay(500);
-
       const travelHomeConfirm = document.querySelector(
-        '[class*="confirmCancel"] button',
+        '#travel-home-panel button, [class*="confirmCancel"] button',
       );
       safeClick(travelHomeConfirm);
 
