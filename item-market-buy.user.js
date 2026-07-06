@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Torn Item Market Auto Buy
 // @namespace    http://tampermonkey.net/
-// @version      1.1
-// @description  Auto-buy an item on the Torn item market, sizing quantity to your cash on hand, with an on-page settings panel.
+// @version      1.2
+// @description  Auto-buy a watchlist of items on the Torn item market, sizing quantity to your cash on hand, cycling items on a no-buy timeout, with an on-page settings panel.
 // @author       GitHub Copilot
 // @match        https://www.torn.com/page.php*
 // @match        https://www.torn.com/imarket.php*
@@ -24,21 +24,53 @@
   const SCAN_MIN_GAP_MS = 500;
 
   const DEFAULTS = {
-    itemName: "",
-    maxUnitPrice: "",
+    items: [], // watchlist: [{ name, maxPrice }]
+    noBuySeconds: 20, // advance to next item after this long with no purchase
     enabled: false,
   };
+
+  // Parse the multi-line items textarea into [{ name, maxPrice }].
+  // Each line: "Item Name = max price" (also accepts | or : as separator).
+  function parseItemsText(text) {
+    return (text || "")
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const m = line.match(/^(.*?)\s*[=|:]\s*(.+)$/);
+        return m
+          ? { name: m[1].trim(), maxPrice: m[2].trim() }
+          : { name: line, maxPrice: "" };
+      })
+      .filter((i) => i.name);
+  }
+
+  function serializeItems(items) {
+    return (items || [])
+      .map((i) => (i.maxPrice ? `${i.name} = ${i.maxPrice}` : i.name))
+      .join("\n");
+  }
 
   // -------------------------------------------------------------------------
   // Settings (localStorage JSON blob merged over defaults)
   // -------------------------------------------------------------------------
   function loadSettings() {
     try {
-      return Object.assign(
-        {},
-        DEFAULTS,
-        JSON.parse(localStorage.getItem(KEY) || "{}"),
-      );
+      const parsed = JSON.parse(localStorage.getItem(KEY) || "{}");
+      const merged = Object.assign({}, DEFAULTS, parsed);
+      // Migrate the old single-item settings to the watchlist.
+      if (
+        !Array.isArray(parsed.items) &&
+        (parsed.itemName || parsed.maxUnitPrice)
+      ) {
+        merged.items = [
+          { name: parsed.itemName || "", maxPrice: parsed.maxUnitPrice || "" },
+        ].filter((i) => i.name);
+      }
+      if (!Array.isArray(merged.items)) merged.items = [];
+      delete merged.itemName;
+      delete merged.maxUnitPrice;
+      return merged;
     } catch (e) {
       return Object.assign({}, DEFAULTS);
     }
@@ -60,6 +92,9 @@
   let monitorObserver = null;
   let scanTimer = null;
   let lastScanTs = 0;
+  let currentIndex = 0; // which watchlist item is active
+  let itemStartTs = 0; // when we started dwelling on the current item (reset on buy)
+  let advanceTimer = null; // interval that advances items after the no-buy timeout
 
   // -------------------------------------------------------------------------
   // Number helpers (reused from property-vault.user.js)
@@ -477,6 +512,34 @@
       safeClick(confirm);
       await wait(400);
     }
+
+    // After a successful buy a success panel appears, e.g.
+    //   <div class="buyDialog___"><div class="confirmMessage___">
+    //     <div class="successText___">You bought 100x Bottle of Beer ...</div>
+    //   </div><div class="closeButtonWrapper___">
+    //     <button aria-label="Close panel" class="closeButton___">…</button>
+    // Read it for logging, then close it so the row is buyable again.
+    const success = await waitForNode(
+      () =>
+        container.querySelector('[class^="successText___"]') ||
+        document.querySelector('[class^="successText___"]'),
+      2500,
+    );
+    if (success) {
+      console.log(LOG, "buy confirmed:", success.textContent.trim());
+      const dialog =
+        success.closest('[class^="buyDialog___"]') ||
+        success.closest('[class^="confirmMessage___"]')?.parentElement ||
+        container;
+      const closeBtn =
+        dialog.querySelector('button[aria-label="Close panel"]') ||
+        dialog.querySelector('[class^="closeButtonWrapper___"] button');
+      if (closeBtn) {
+        console.log(LOG, "closing success message");
+        safeClick(closeBtn);
+        await wait(200);
+      }
+    }
     return true;
   }
 
@@ -486,15 +549,24 @@
     if (busy) return;
     busy = true;
     try {
-      const selected = await ensureItemSelected(settings.itemName);
+      const list = settings.items || [];
+      if (!list.length) {
+        setStatus("Add items (one per line: Name = max price).");
+        return;
+      }
+      if (currentIndex >= list.length) currentIndex = 0;
+      const cur = list[currentIndex];
+      const tag = `[${currentIndex + 1}/${list.length}] ${cur.name}`;
+
+      const selected = await ensureItemSelected(cur.name);
       if (!selected) {
-        setStatus("Waiting for item: " + (settings.itemName || "(none set)"));
+        setStatus(`Waiting for ${tag}…`);
         return;
       }
 
-      const cap = parseAmount(settings.maxUnitPrice);
+      const cap = parseAmount(cur.maxPrice);
       if (cap <= 0) {
-        setStatus("Set a max unit price to enable buying.");
+        setStatus(`${tag}: no valid max price set — skipping.`);
         return;
       }
 
@@ -512,7 +584,7 @@
 
       if (!entries.length) {
         setStatus(
-          `No listings <= $${formatNumber(cap)} for ${getSelectedItemTitle()}. Cash $${formatNumber(money)}.`,
+          `${tag}: no listings <= $${formatNumber(cap)}. Cash $${formatNumber(money)}.`,
         );
         return;
       }
@@ -528,8 +600,9 @@
         if (ok) {
           boughtUnits += qty;
           spent += qty * entry.unitPrice;
+          itemStartTs = Date.now(); // reset dwell timer — keep sniping this item
           setStatus(
-            `Bought ${formatNumber(boughtUnits)} @ up to $${formatNumber(cap)} (spent ~$${formatNumber(spent)}). Cash $${formatNumber(getMoneyOnHand())}.`,
+            `${tag}: bought ${formatNumber(boughtUnits)} @ up to $${formatNumber(cap)} (spent ~$${formatNumber(spent)}). Cash $${formatNumber(getMoneyOnHand())}.`,
           );
           await wait(700); // let React + money update settle
         } else {
@@ -540,13 +613,62 @@
 
       if (boughtUnits === 0) {
         setStatus(
-          `Scanned ${entries.length} listing(s) <= $${formatNumber(cap)}, none affordable. Cash $${formatNumber(getMoneyOnHand())}.`,
+          `${tag}: ${entries.length} listing(s) <= $${formatNumber(cap)}, none affordable. Cash $${formatNumber(getMoneyOnHand())}.`,
         );
       }
     } catch (e) {
       console.warn(LOG, "scanAndBuy error", e);
     } finally {
       busy = false;
+    }
+  }
+
+  // Move to the next watchlist item. Called by the no-buy-timeout checker.
+  function advanceItem(reason) {
+    const list = settings.items || [];
+    if (list.length <= 1) return; // nothing to cycle to
+    currentIndex = (currentIndex + 1) % list.length;
+    itemStartTs = Date.now();
+    lastSearchedItem = null; // force a fresh search for the new item
+    const cur = list[currentIndex];
+    console.log(
+      LOG,
+      `advancing to [${currentIndex + 1}/${list.length}] ${cur.name} (${reason})`,
+    );
+    scheduleScan();
+  }
+
+  // Refresh the panel countdown showing time until the next item.
+  function updateCountdown(list, remainingMs) {
+    const el = document.getElementById("tm-imbuy-countdown");
+    if (!el) return;
+    if (!settings.enabled || !list.length) {
+      el.textContent = "";
+      return;
+    }
+    const cur = list[currentIndex] || {};
+    const pos = `[${currentIndex + 1}/${list.length}] ${cur.name || ""}`;
+    if (list.length <= 1) {
+      el.textContent = `Sniping ${cur.name || ""} (single item — no cycling)`;
+    } else if (busy) {
+      el.textContent = `Buying ${pos}…`;
+    } else {
+      el.textContent = `${pos} — next item in ${Math.ceil(remainingMs / 1000)}s`;
+    }
+  }
+
+  // Advance to the next item if the current one hasn't yielded a buy within
+  // the configured no-buy timeout. Runs on a 1s timer (time-based by nature),
+  // and also refreshes the on-panel countdown each tick.
+  function checkDwell() {
+    if (!settings.enabled) return;
+    const list = settings.items || [];
+    const timeoutMs = Math.max(1, Number(settings.noBuySeconds) || 20) * 1000;
+    const remainingMs = Math.max(0, timeoutMs - (Date.now() - itemStartTs));
+    updateCountdown(list, remainingMs);
+    if (busy || list.length <= 1) return;
+    if (remainingMs <= 0) {
+      advanceItem(`no buy within ${Math.round(timeoutMs / 1000)}s`);
     }
   }
 
@@ -573,13 +695,18 @@
   function startMonitor() {
     stopMonitor();
     if (!settings.enabled) return;
+    currentIndex = 0;
+    itemStartTs = Date.now();
     // Observe the (stable) market wrapper so we catch both realtime row
     // updates within the seller list and full list swaps on item change.
     const target =
       document.querySelector('[class^="marketWrapper___"]') || document.body;
     monitorObserver = new MutationObserver(scheduleScan);
     monitorObserver.observe(target, { childList: true, subtree: true });
+    // Time-based check that cycles to the next item after the no-buy timeout.
+    advanceTimer = setInterval(checkDwell, 1000);
     console.log(LOG, "monitoring seller list via MutationObserver");
+    checkDwell(); // show the countdown immediately
     scheduleScan(); // initial pass
   }
 
@@ -591,6 +718,10 @@
     if (scanTimer) {
       clearTimeout(scanTimer);
       scanTimer = null;
+    }
+    if (advanceTimer) {
+      clearInterval(advanceTimer);
+      advanceTimer = null;
     }
   }
 
@@ -618,17 +749,18 @@
     panel.innerHTML = `
       <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; box-sizing:border-box; width:100%;">
         <strong style="flex:1 1 100%;">Torn Item Market Auto Buy</strong>
-        <label style="display:flex; align-items:center; gap:6px; flex:1 1 auto; min-width:0;">
-          Item:
-          <input id="tm-imbuy-item" type="text" placeholder="e.g. Xanax" style="flex:1; min-width:0; padding:4px 6px; border-radius:4px; border:1px solid #555; background:#111; color:#eee; box-sizing:border-box;">
+        <label style="display:flex; flex-direction:column; gap:4px; flex:1 1 100%; min-width:0;">
+          Items (one per line: Name = max price)
+          <textarea id="tm-imbuy-items" rows="4" placeholder="Xanax = 800k&#10;Bottle of Beer = 900&#10;Feathery Hotel Coupon = 1.5m" style="width:100%; padding:6px; border-radius:4px; border:1px solid #555; background:#111; color:#eee; box-sizing:border-box; resize:vertical; font-family:monospace; font-size:12px;"></textarea>
         </label>
         <label style="display:flex; align-items:center; gap:6px;">
-          Max unit price:
-          <input id="tm-imbuy-maxprice" type="text" placeholder="e.g. 800k" style="width:110px; padding:4px 6px; border-radius:4px; border:1px solid #555; background:#111; color:#eee; box-sizing:border-box;">
+          Next item after (s):
+          <input id="tm-imbuy-timeout" type="number" min="1" style="width:70px; padding:4px 6px; border-radius:4px; border:1px solid #555; background:#111; color:#eee; box-sizing:border-box;">
         </label>
         <label style="display:flex; align-items:center; gap:6px;">
           <input id="tm-imbuy-enabled" type="checkbox"> Auto-buy
         </label>
+        <span id="tm-imbuy-countdown" style="flex:1 1 100%; color:#f0a500; font-weight:bold; white-space:normal;"></span>
         <span id="tm-imbuy-status" style="flex:1 1 100%; color:#8bd; white-space:normal;"></span>
       </div>
     `;
@@ -637,22 +769,25 @@
 
   function wirePanel() {
     const $ = (id) => document.getElementById(id);
-    const itemEl = $("tm-imbuy-item");
-    const priceEl = $("tm-imbuy-maxprice");
+    const itemsEl = $("tm-imbuy-items");
+    const timeoutEl = $("tm-imbuy-timeout");
     const enabledEl = $("tm-imbuy-enabled");
-    if (!itemEl) return;
+    if (!itemsEl) return;
 
-    itemEl.value = settings.itemName || "";
-    priceEl.value = settings.maxUnitPrice || "";
+    itemsEl.value = serializeItems(settings.items);
+    timeoutEl.value = settings.noBuySeconds || 20;
     enabledEl.checked = !!settings.enabled;
 
-    itemEl.addEventListener("change", () => {
-      settings.itemName = itemEl.value.trim();
+    itemsEl.addEventListener("change", () => {
+      settings.items = parseItemsText(itemsEl.value);
       lastSearchedItem = null;
+      currentIndex = 0;
+      itemStartTs = Date.now();
       saveSettings(settings);
+      setStatus(`${settings.items.length} item(s) in watchlist.`);
     });
-    priceEl.addEventListener("change", () => {
-      settings.maxUnitPrice = priceEl.value.trim();
+    timeoutEl.addEventListener("change", () => {
+      settings.noBuySeconds = Math.max(1, parseInt(timeoutEl.value || 20, 10));
       saveSettings(settings);
     });
     enabledEl.addEventListener("change", () => {
@@ -661,6 +796,8 @@
       if (settings.enabled) startMonitor();
       else {
         stopMonitor();
+        const cd = document.getElementById("tm-imbuy-countdown");
+        if (cd) cd.textContent = "";
         setStatus("Auto-buy off.");
       }
     });
@@ -668,7 +805,9 @@
     setStatus(
       settings.enabled
         ? "Auto-buy on."
-        : `Cash on hand: $${formatNumber(getMoneyOnHand())}. Set item + price, then enable.`,
+        : `Cash on hand: $${formatNumber(getMoneyOnHand())}. ${
+            settings.items.length
+          } item(s) listed. Add items, then enable.`,
     );
   }
 
@@ -835,6 +974,12 @@
       parseRow,
       scanNow: scanAndBuy,
       ensureItemSelected,
+      parseItemsText,
+      serializeItems,
+      advanceItem,
+      get currentIndex() {
+        return currentIndex;
+      },
       startMonitor,
       stopMonitor,
     };

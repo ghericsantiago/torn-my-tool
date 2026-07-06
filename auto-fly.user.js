@@ -4,8 +4,9 @@
 // @version      1.0
 // @description  Auto-fly to abroad on Torn with an injected UI (settings saved to localStorage)
 // @author       GitHub Copilot
-// @match        https://www.torn.com/*
-// @match        https://www.torn.com/
+// @match        https://www.torn.com
+// @match        https://www.torn.com/index.php
+// @match        https://www.torn.com/page.php?sid=travel
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
