@@ -85,9 +85,182 @@
 
   let settings = loadSettings();
   let intervalId = null;
+  let reviveTimer = null; // scheduled reload when hospital ends abroad
+  let reviveCountdownTimer = null;
 
   function formatMs(ms) {
     return Math.round(ms / 1000) + "s";
+  }
+
+  // ------------------------------------------------------------------
+  // Torn API (reuses the key/request pattern from property-vault.user.js).
+  // Used to find the exact hospital release time when abroad.
+  // ------------------------------------------------------------------
+  const API_KEY = "v6Yo75UQIYvWYrhT";
+
+  async function apiRequest(section, selections) {
+    const res = await fetch(
+      `https://api.torn.com/${section}/?selections=${selections}&key=${API_KEY}`,
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.error) throw new Error(`[${data.error.code}] ${data.error.error}`);
+    return data;
+  }
+
+  // Returns { state, until, secondsRemaining }; secondsRemaining is 0 when not
+  // hospitalised. `until` is a UNIX timestamp (seconds) — the revive time.
+  async function getHospitalStatus() {
+    const data = await apiRequest("user", "basic");
+    const st = data.status || {};
+    const now = Math.floor(Date.now() / 1000);
+    const secondsRemaining =
+      st.state === "Hospital" && st.until > now ? st.until - now : 0;
+    return { state: st.state, until: st.until || 0, secondsRemaining };
+  }
+
+  // Always-visible floating badge (mobile hides the panel inside the FAB sheet,
+  // so the countdown needs its own on-screen element).
+  function getCountdownBadge() {
+    let b = document.getElementById("tm-autofly-countdown-badge");
+    if (!b) {
+      b = document.createElement("div");
+      b.id = "tm-autofly-countdown-badge";
+      b.style.cssText = [
+        "position:fixed",
+        "bottom:84px",
+        "right:16px",
+        "max-width:220px",
+        "padding:8px 12px",
+        "background:#1a1a1a",
+        "border:2px solid #f0a500",
+        "border-radius:10px",
+        "color:#f0a500",
+        "font-weight:bold",
+        "font-family:Arial,sans-serif",
+        "font-size:13px",
+        "line-height:1.3",
+        "z-index:999999",
+        "box-shadow:0 3px 10px rgba(0,0,0,0.6)",
+        "display:none",
+        "text-align:center",
+        "pointer-events:none",
+      ].join(";");
+      document.body.appendChild(b);
+    }
+    return b;
+  }
+
+  function setReviveCountdown(secs) {
+    if (reviveCountdownTimer) {
+      clearInterval(reviveCountdownTimer);
+      reviveCountdownTimer = null;
+    }
+    let remaining = Math.max(0, Math.floor(secs));
+    const render = () => {
+      // Re-acquire (re-create) the badge every tick — the SPA can wipe
+      // body-appended nodes on re-render, which would otherwise leave us
+      // updating a detached element that's no longer on screen.
+      const badge = getCountdownBadge();
+      const panelEl = document.getElementById("tm-autofly-status");
+      const text =
+        remaining <= 0
+          ? "Out of hospital — resuming…"
+          : `In hospital — reviving in ${Math.floor(remaining / 60)}m ${remaining % 60}s`;
+      if (panelEl) {
+        panelEl.textContent = text;
+        panelEl.style.display = "";
+      }
+      badge.textContent = text;
+      badge.style.display = "";
+      if (remaining <= 0) {
+        clearInterval(reviveCountdownTimer);
+        reviveCountdownTimer = null;
+        // Leave the "resuming" note briefly, then hide the badge.
+        setTimeout(() => {
+          const b = document.getElementById("tm-autofly-countdown-badge");
+          if (b) b.style.display = "none";
+        }, 4000);
+        return;
+      }
+      remaining--;
+    };
+    render();
+    reviveCountdownTimer = setInterval(render, 1000);
+  }
+
+  // Independent hospital check that runs on load regardless of fly settings, so
+  // the revive countdown always appears when hospitalised on a page we run on.
+  // Only schedules the auto-reload when abroad (to retry the shop + fly-home).
+  function setPanelStatus(text) {
+    const el = document.getElementById("tm-autofly-status");
+    if (el) {
+      el.textContent = text;
+      el.style.display = "";
+    }
+  }
+
+  async function initHospitalWatch() {
+    let status;
+    try {
+      status = await getHospitalStatus();
+    } catch (e) {
+      console.warn("[AutoFly] initHospitalWatch API failed", e);
+      setPanelStatus("Hospital check: API error (check API key access)");
+      return;
+    }
+    if (status.secondsRemaining <= 0) {
+      // Not in hospital — show current state so the panel gives feedback.
+      setPanelStatus(`Not in hospital — state: ${status.state || "Okay"}`);
+      return;
+    }
+    console.log(
+      `[AutoFly] Hospitalized — revive in ${status.secondsRemaining}s (until ${status.until})`,
+    );
+    setReviveCountdown(status.secondsRemaining);
+    const abroad =
+      (document.body && document.body.dataset.abroad === "true") ||
+      isAbroadOrTraveling();
+    if (abroad && !reviveTimer) {
+      reviveTimer = setTimeout(
+        () => location.reload(),
+        status.secondsRemaining * 1000 + 3000,
+      );
+    }
+  }
+
+  // When abroad and hospitalised, look up the exact revive time via the API and
+  // schedule a single page reload for that moment (so the abroad shop + fly-home
+  // routine retries once we're out). Returns true if a wait was scheduled (i.e.
+  // we are hospitalised), false if free to proceed now.
+  async function scheduleReviveReloadIfHospitalized() {
+    let status;
+    try {
+      status = await getHospitalStatus();
+    } catch (e) {
+      console.warn("[AutoFly] hospital status API failed, retrying in 30s", e);
+      if (!reviveTimer) {
+        reviveTimer = setTimeout(() => location.reload(), 30_000);
+      }
+      return true; // don't shop until we know we're clear
+    }
+
+    if (!status.secondsRemaining) return false; // not in hospital — proceed
+
+    const secs = status.secondsRemaining;
+    console.log(
+      `[AutoFly] Hospitalized abroad — revive in ${secs}s (until ${status.until})`,
+    );
+    setReviveCountdown(secs);
+
+    if (!reviveTimer) {
+      // +3s buffer so the server-side release has definitely applied.
+      reviveTimer = setTimeout(
+        () => location.reload(),
+        secs * 1000 + 3000,
+      );
+    }
+    return true;
   }
 
   function isHospital() {
@@ -229,7 +402,11 @@
       const body = document.body || {};
       if (body.dataset && body.dataset.abroad === "true") {
         if (settings.flyBackEnabled) {
-          await processAbroadShopping();
+          // If hospitalised abroad, wait for revive (API) then retry on reload.
+          const waiting = await scheduleReviveReloadIfHospitalized();
+          if (!waiting) {
+            await processAbroadShopping();
+          }
         } else {
           console.log("[AutoFly] Abroad but fly-back is disabled, skipping");
         }
@@ -269,15 +446,19 @@
 
     // If desired country is set, attempt to set it first
     if (settings.desiredCountry) {
-      const setOk = setCountryOnTravelPage(settings.desiredCountry);
-      // Also click the destination on the travel page
       if (isTravelPage()) {
+        // On the travel page use clickTravelDestination exclusively — calling
+        // setCountryOnTravelPage first would double-click the expand button,
+        // toggling it closed before the Travel button appears.
         await clickTravelDestination(settings.desiredCountry);
         // give UI time to update after destination selection
         await wait(1500);
-      } else if (setOk) {
-        // give UI a moment to update after selection
-        await wait(10000);
+      } else {
+        const setOk = setCountryOnTravelPage(settings.desiredCountry);
+        if (setOk) {
+          // give UI a moment to update after selection
+          await wait(10000);
+        }
       }
     }
 
@@ -399,6 +580,7 @@
                         ${VALID_DESTINATIONS.map((d) => `<option>${d}</option>`).join("")}
                     </select>
                 </label>
+                <span id="tm-autofly-status" style="flex:1 1 100%; color:#f0a500; font-weight:bold; white-space:normal; display:none;"></span>
             </div>
         `;
 
@@ -449,7 +631,10 @@
       backdrop.appendChild(sheet);
       document.body.appendChild(backdrop);
 
-      const openModal = () => { backdrop.style.display = "flex"; };
+      const openModal = () => {
+        backdrop.style.display = "flex";
+        initHospitalWatch(); // refresh the status line on open
+      };
       const closeModal = () => { backdrop.style.display = "none"; };
       fab.addEventListener("click", () => {
         backdrop.style.display === "flex" ? closeModal() : openModal();
@@ -897,43 +1082,6 @@
     });
   }
 
-  // After clicking a row's cart/buy button a confirmation panel
-  // (id="item-<id>-buyPanel") opens — Torn's "Abroad Buy No Confirm" feature is
-  // disabled, so the purchase must be confirmed. Wait for the panel's confirm
-  // button and return it (or null if none appears).
-  function waitForBuyConfirm(panelId, timeout = 3000) {
-    const find = () => {
-      const panel = panelId ? document.getElementById(panelId) : null;
-      if (panel && panel.offsetParent !== null) {
-        return (
-          panel.querySelector("button.torn-btn") ||
-          panel.querySelector('button[class*="buyButton" i]') ||
-          panel.querySelector('button[class*="confirm" i]') ||
-          [...panel.querySelectorAll("button")].find((b) =>
-            /buy|confirm|yes/i.test((b.textContent || "").trim()),
-          ) ||
-          null
-        );
-      }
-      return null;
-    };
-    return new Promise((resolve) => {
-      const existing = find();
-      if (existing) return resolve(existing);
-      const obs = new MutationObserver(() => {
-        const f = find();
-        if (f) {
-          obs.disconnect();
-          resolve(f);
-        }
-      });
-      obs.observe(document.body, { childList: true, subtree: true });
-      setTimeout(() => {
-        obs.disconnect();
-        resolve(null);
-      }, timeout);
-    });
-  }
 
   // Purchase items from SHOPPING_LIST when abroad, THEN travel home.
   async function processAbroadShopping() {
@@ -971,12 +1119,14 @@
         console.log(`[AutoFly] Buying ${itemName}`);
 
         // 1) Fill the maximum amount via the max (wai-btn) button.
+        // On mobile the amount column is CSS-hidden; the max-fill element is a
+        // <span class="wai-btn"> — not an input or button — so target it first.
         const maxBtn = (amountCell || row).querySelector(
-          ".input-money-symbol input.wai-btn, .input-money-symbol button, input.wai-btn",
+          '[class*="wai-btn"], .input-money-symbol input.wai-btn, .input-money-symbol button, input.wai-btn',
         );
         if (maxBtn) {
           safeClick(maxBtn);
-          await delay(300);
+          await delay(500);
         }
 
         // 2) Click the cart/buy button — opens the confirmation panel.
@@ -989,13 +1139,57 @@
         safeClick(buyBtn);
         await delay(300);
 
-        // 3) Confirm the purchase.
-        const confirmBtn = await waitForBuyConfirm(panelId, 3000);
-        if (confirmBtn) {
-          safeClick(confirmBtn);
+        // 3) Two-step mobile flow:
+        //    Step A — intermediate panel shows qty + "BUY" button; click it.
+        //    Step B — Yes/No confirmation appears; click "Yes".
+        //    Desktop skips step A (Yes/No appears directly after the cart click).
+        let yesBtn = null;
+        let clickedBuyBtn = false;
+        const deadline = Date.now() + 6000;
+        while (Date.now() < deadline) {
+          const panel = panelId ? document.getElementById(panelId) : null;
+          const panelBtns = panel ? [...panel.querySelectorAll("button")] : [];
+
+          // Priority 1: Yes button (final step on both mobile and desktop)
+          yesBtn = panelBtns.find((b) => /^yes$/i.test((b.textContent || "").trim()));
+          if (!yesBtn) {
+            for (const cp of document.querySelectorAll('[class*="confirmPanel"]')) {
+              yesBtn = [...cp.querySelectorAll("button")].find((b) =>
+                /^yes$/i.test((b.textContent || "").trim()),
+              );
+              if (yesBtn) break;
+            }
+          }
+          if (yesBtn) break;
+
+          // Priority 2: BUY button (intermediate step on mobile)
+          if (!clickedBuyBtn && panelBtns.length > 0) {
+            const interimBuy = panelBtns.find((b) =>
+              /^buy$/i.test((b.textContent || "").trim()),
+            );
+            if (interimBuy) {
+              console.log(`[AutoFly] clicking intermediate BUY for ${itemName}`);
+              try { interimBuy.click(); } catch (e) {}
+              clickedBuyBtn = true;
+              await delay(400);
+              continue;
+            }
+          }
+
+          await delay(100);
+        }
+
+        if (yesBtn) {
+          try { yesBtn.click(); } catch (e) {}
           boughtAny = true;
           console.log(`[AutoFly] confirmed purchase of ${itemName}`);
-          await delay(600);
+          await delay(800);
+        } else if (clickedBuyBtn) {
+          // BUY was clicked but no Yes/No appeared — purchase may have gone
+          // through directly (e.g. "Abroad Buy No Confirm" mode).
+          boughtAny = true;
+          console.log(`[AutoFly] BUY clicked for ${itemName} (no Yes/No panel)`);
+          await delay(800);
         } else {
           console.warn(
             "[AutoFly] buy confirmation not found for",
@@ -1064,6 +1258,10 @@
   // Start timer
   startTimer();
 
+  // Independent hospital check on load — shows the revive countdown whenever
+  // hospitalised, regardless of the fly-out/fly-back toggles.
+  initHospitalWatch();
+
   // Expose helpers for console testing and manual extraction
   try {
     window.tmAutoFly = {
@@ -1074,6 +1272,9 @@
       startTimer,
       stopTimer,
       getAvailableCountries,
+      getHospitalStatus,
+      initHospitalWatch,
+      testCountdown: (secs = 120) => setReviveCountdown(secs),
     };
     console.log("[AutoFly] helpers available at window.tmAutoFly");
   } catch (e) {}
