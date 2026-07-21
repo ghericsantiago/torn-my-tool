@@ -30,8 +30,8 @@
     "South Africa",
   ];
 
-  // Items to purchase when abroad (loaded from shopping-list.txt)
-  const SHOPPING_LIST = [
+  // Default shopping list — used when no user-managed list is saved.
+  const SHOPPING_LIST_DEFAULT = [
     "Camel Plushie",
     "Chamois Plushie",
     "Jaguar Plushie",
@@ -65,7 +65,7 @@
     "Single Red Rose",
     "Tribulus Omanense",
     "White Lily",
-  ].map((s) => s.toLowerCase());
+  ];
 
   function loadSettings() {
     try {
@@ -83,10 +83,63 @@
     } catch (e) {}
   }
 
+  // --- Shopping list management ---
+  const SHOPPING_LIST_KEY = "tmShoppingList";
+
+  function loadShoppingList() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SHOPPING_LIST_KEY) || "null");
+      if (Array.isArray(saved)) return saved;
+    } catch (e) {}
+    return SHOPPING_LIST_DEFAULT.slice();
+  }
+
+  function saveShoppingList(list) {
+    try {
+      localStorage.setItem(SHOPPING_LIST_KEY, JSON.stringify(list));
+    } catch (e) {}
+  }
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function renderShoppingList() {
+    const container = document.getElementById("tm-autofly-items-list");
+    const summary = document.getElementById("tm-autofly-items-summary");
+    if (!container) return;
+    const list = loadShoppingList();
+    if (summary) {
+      summary.textContent = `Shopping List (${list.length} item${list.length !== 1 ? "s" : ""}) — top = first bought`;
+    }
+    container.innerHTML = "";
+    list.forEach((item, i) => {
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid #2a2a2a;";
+      const btnStyle = "padding:1px 5px;background:#222;border:1px solid #444;color:#ccc;border-radius:3px;cursor:pointer;font-size:11px;line-height:1.4;";
+      row.innerHTML = [
+        `<span style="color:#666;font-size:10px;min-width:16px;text-align:right;">${i + 1}.</span>`,
+        `<button data-action="up" data-idx="${i}" style="${btnStyle}"${i === 0 ? " disabled" : ""}>↑</button>`,
+        `<button data-action="down" data-idx="${i}" style="${btnStyle}"${i === list.length - 1 ? " disabled" : ""}>↓</button>`,
+        `<span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 4px;">${escHtml(item)}</span>`,
+        `<button data-action="remove" data-idx="${i}" style="${btnStyle.replace("#ccc","#f66").replace("#444","#622")}">×</button>`,
+      ].join("");
+      container.appendChild(row);
+    });
+  }
+  // --- end shopping list management ---
+
   let settings = loadSettings();
   let intervalId = null;
   let reviveTimer = null; // scheduled reload when hospital ends abroad
   let reviveCountdownTimer = null;
+  let travelReloadTimer = null;
+  let travelDomPollerId = null;
+  let travelCountdownTimer = null;
 
   function formatMs(ms) {
     return Math.round(ms / 1000) + "s";
@@ -227,6 +280,92 @@
         status.secondsRemaining * 1000 + 3000,
       );
     }
+  }
+
+  // Travel arrival watch — uses the API for exact time_left, with a 5s DOM
+  // poller as a fallback for when the page hangs and doesn't auto-refresh.
+  function setTravelCountdown(secs, dest) {
+    if (travelCountdownTimer) {
+      clearInterval(travelCountdownTimer);
+      travelCountdownTimer = null;
+    }
+    let remaining = Math.max(0, Math.floor(secs));
+    const render = () => {
+      const badge = getCountdownBadge();
+      badge.style.borderColor = "#4db8ff";
+      badge.style.color = "#4db8ff";
+      const text =
+        remaining <= 0
+          ? `Arrived at ${dest} — reloading…`
+          : `Flying to ${dest} — ${Math.floor(remaining / 60)}m ${remaining % 60}s`;
+      const panelEl = document.getElementById("tm-autofly-status");
+      if (panelEl) {
+        panelEl.textContent = text;
+        panelEl.style.display = "";
+      }
+      badge.textContent = text;
+      badge.style.display = "";
+      if (remaining <= 0) {
+        clearInterval(travelCountdownTimer);
+        travelCountdownTimer = null;
+        return;
+      }
+      remaining--;
+    };
+    render();
+    travelCountdownTimer = setInterval(render, 1000);
+  }
+
+  function startTravelDomPoller() {
+    if (travelDomPollerId) return;
+    travelDomPollerId = setInterval(() => {
+      const b = document.body;
+      if (!b || b.dataset.traveling !== "true") {
+        clearInterval(travelDomPollerId);
+        travelDomPollerId = null;
+        if (travelReloadTimer) { clearTimeout(travelReloadTimer); travelReloadTimer = null; }
+        if (travelCountdownTimer) { clearInterval(travelCountdownTimer); travelCountdownTimer = null; }
+        console.log("[AutoFly] Travel state cleared (DOM poller) — reloading");
+        location.reload();
+      }
+    }, 5000);
+  }
+
+  async function initTravelWatch() {
+    const b = document.body;
+    if (!b || b.dataset.traveling !== "true") return; // not in-flight
+
+    let travelInfo;
+    try {
+      const data = await apiRequest("user", "basic,travel");
+      travelInfo = data.travel;
+    } catch (e) {
+      console.warn("[AutoFly] initTravelWatch API failed — falling back to DOM poller", e);
+      startTravelDomPoller();
+      return;
+    }
+
+    const secs = Number((travelInfo && travelInfo.time_left) || 0);
+    const dest = (travelInfo && travelInfo.destination) || "destination";
+
+    if (secs <= 0) {
+      console.log("[AutoFly] Travel already complete (API) — reloading");
+      location.reload();
+      return;
+    }
+
+    console.log(`[AutoFly] Traveling to ${dest} — reloading in ${secs}s`);
+    setTravelCountdown(secs, dest);
+
+    if (!travelReloadTimer) {
+      travelReloadTimer = setTimeout(() => {
+        console.log("[AutoFly] Arrival time reached — reloading");
+        location.reload();
+      }, secs * 1000 + 3000);
+    }
+
+    // DOM poller runs in parallel as a belt-and-suspenders failsafe
+    startTravelDomPoller();
   }
 
   // When abroad and hospitalised, look up the exact revive time via the API and
@@ -528,6 +667,7 @@
     intervalId = setInterval(
       () => {
         tryAutoFly();
+        console.log("[AutoFly] Starting timer", getPurchaseInfo());
       },
       Math.max(1, settings.intervalMinutes || 5) * 60 * 1000,
     );
@@ -581,6 +721,14 @@
                     </select>
                 </label>
                 <span id="tm-autofly-status" style="flex:1 1 100%; color:#f0a500; font-weight:bold; white-space:normal; display:none;"></span>
+                <details id="tm-autofly-items-toggle" style="flex:1 1 100%; margin-top:4px; border-top:1px solid #333; padding-top:6px;">
+                    <summary id="tm-autofly-items-summary" style="cursor:pointer; color:#aaa; font-size:12px; user-select:none; list-style:none;">Shopping List (0 items) — top = first bought</summary>
+                    <div id="tm-autofly-items-list" style="margin-top:6px; max-height:200px; overflow-y:auto;"></div>
+                    <div style="display:flex; gap:6px; margin-top:6px;">
+                        <input id="tm-autofly-item-input" type="text" placeholder="Item name to add..." style="flex:1; padding:4px 6px; border-radius:4px; border:1px solid #555; background:#111; color:#eee; box-sizing:border-box; font-size:12px;">
+                        <button id="tm-autofly-item-add" style="padding:4px 8px; border-radius:4px; border:1px solid #555; background:#333; color:#eee; cursor:pointer; white-space:nowrap; font-size:12px;">+ Add</button>
+                    </div>
+                </details>
             </div>
         `;
 
@@ -804,6 +952,54 @@
             }
           }
         }
+      });
+    }
+
+    // Shopping list UI wiring
+    const itemsToggle = document.getElementById("tm-autofly-items-toggle");
+    const itemsList = document.getElementById("tm-autofly-items-list");
+    const itemInput = document.getElementById("tm-autofly-item-input");
+    const itemAddBtn = document.getElementById("tm-autofly-item-add");
+
+    if (itemsList) {
+      renderShoppingList();
+
+      // Up / Down / Remove via event delegation on the list container
+      itemsList.addEventListener("click", (e) => {
+        const btn = e.target.closest("button[data-action]");
+        if (!btn) return;
+        const action = btn.dataset.action;
+        const idx = parseInt(btn.dataset.idx, 10);
+        const list = loadShoppingList();
+        if (action === "remove") {
+          list.splice(idx, 1);
+        } else if (action === "up" && idx > 0) {
+          [list[idx - 1], list[idx]] = [list[idx], list[idx - 1]];
+        } else if (action === "down" && idx < list.length - 1) {
+          [list[idx], list[idx + 1]] = [list[idx + 1], list[idx]];
+        }
+        saveShoppingList(list);
+        renderShoppingList();
+      });
+    }
+
+    if (itemAddBtn && itemInput) {
+      const doAdd = () => {
+        const val = itemInput.value.trim();
+        if (!val) return;
+        const list = loadShoppingList();
+        if (!list.some((x) => x.toLowerCase() === val.toLowerCase())) {
+          list.push(val);
+          saveShoppingList(list);
+          renderShoppingList();
+          // Auto-expand the section after adding
+          if (itemsToggle && !itemsToggle.open) itemsToggle.open = true;
+        }
+        itemInput.value = "";
+      };
+      itemAddBtn.addEventListener("click", doAdd);
+      itemInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); doAdd(); }
       });
     }
   }
@@ -1083,6 +1279,17 @@
   }
 
 
+  // Parse the "X / Y items so far" counter from the abroad info message.
+  // Returns { purchased, limit } or null if not found.
+  function getPurchaseInfo() {
+    const msgEl = document.querySelector('[class*="messageContent"]');
+    if (!msgEl) return null;
+    const text = msgEl.textContent || "";
+    const match = text.match(/(\d+)\s*\/\s*(\d+)\s*items/i);
+    if (!match) return null;
+    return { purchased: parseInt(match[1], 10), limit: parseInt(match[2], 10) };
+  }
+
   // Purchase items from SHOPPING_LIST when abroad, THEN travel home.
   async function processAbroadShopping() {
     try {
@@ -1094,120 +1301,163 @@
         return;
       }
 
-      // Each row is <li><div class="row___…"> with cells addressed by the
-      // stable data-tt-content-type attribute (name/cost/stock/amount/buy).
-      // The column header is a separate itemsHeader___ element (no row___), so
-      // it is naturally excluded.
-      const rows = Array.from(
-        stockTableWrapper.querySelectorAll('li > [class^="row___"]'),
-      );
-      console.log(`[AutoFly] shop rows found: ${rows.length}`);
+      // Check remaining purchase slots from the info message (e.g. "0 / 28 items so far").
+      const purchaseInfo = getPurchaseInfo();
+      let remainingSlots = purchaseInfo
+        ? purchaseInfo.limit - purchaseInfo.purchased
+        : Infinity;
+      if (purchaseInfo) {
+        console.log(
+          `[AutoFly] Purchase slots: ${purchaseInfo.purchased} / ${purchaseInfo.limit} (${remainingSlots} remaining)`,
+        );
+      }
 
       let boughtAny = false;
-      for (const row of rows) {
-        const nameCell = row.querySelector('[data-tt-content-type="name"]');
-        const buyCell = row.querySelector('[data-tt-content-type="buy"]');
-        const amountCell = row.querySelector('[data-tt-content-type="amount"]');
-        if (!nameCell || !buyCell) continue;
+      let itemsAvailable = false;
 
-        const itemName = nameCell.textContent.trim();
-        const matched = SHOPPING_LIST.some((w) =>
-          itemName.toLowerCase().includes(w),
+      if (remainingSlots <= 0) {
+        console.log("[AutoFly] Purchase limit already reached — skipping purchases, flying home.");
+      } else {
+        // Each row is <li><div class="row___…"> with cells addressed by the
+        // stable data-tt-content-type attribute (name/cost/stock/amount/buy).
+        // The column header is a separate itemsHeader___ element (no row___), so
+        // it is naturally excluded.
+        const rows = Array.from(
+          stockTableWrapper.querySelectorAll('li > [class^="row___"]'),
         );
-        if (!matched) continue;
+        console.log(`[AutoFly] shop rows found: ${rows.length}`);
 
-        console.log(`[AutoFly] Buying ${itemName}`);
-
-        // 1) Fill the maximum amount via the max (wai-btn) button.
-        // On mobile the amount column is CSS-hidden; the max-fill element is a
-        // <span class="wai-btn"> — not an input or button — so target it first.
-        const maxBtn = (amountCell || row).querySelector(
-          '[class*="wai-btn"], .input-money-symbol input.wai-btn, .input-money-symbol button, input.wai-btn',
-        );
-        if (maxBtn) {
-          safeClick(maxBtn);
-          await delay(500);
+        // Build a map from lowercased shop name → row so we can look up by
+        // shopping-list order rather than DOM order.
+        const nameToRow = new Map();
+        for (const r of rows) {
+          const nc = r.querySelector('[data-tt-content-type="name"]');
+          const bc = r.querySelector('[data-tt-content-type="buy"]');
+          if (nc && bc) nameToRow.set(nc.textContent.trim().toLowerCase(), r);
         }
 
-        // 2) Click the cart/buy button — opens the confirmation panel.
-        const buyBtn = buyCell.querySelector("button");
-        if (!buyBtn) {
-          console.warn("[AutoFly] no buy button for", itemName);
-          continue;
-        }
-        const panelId = buyBtn.getAttribute("aria-controls"); // item-<id>-buyPanel
-        safeClick(buyBtn);
-        await delay(300);
-
-        // 3) Two-step mobile flow:
-        //    Step A — intermediate panel shows qty + "BUY" button; click it.
-        //    Step B — Yes/No confirmation appears; click "Yes".
-        //    Desktop skips step A (Yes/No appears directly after the cart click).
-        let yesBtn = null;
-        let clickedBuyBtn = false;
-        const deadline = Date.now() + 6000;
-        while (Date.now() < deadline) {
-          const panel = panelId ? document.getElementById(panelId) : null;
-          const panelBtns = panel ? [...panel.querySelectorAll("button")] : [];
-
-          // Priority 1: Yes button (final step on both mobile and desktop)
-          yesBtn = panelBtns.find((b) => /^yes$/i.test((b.textContent || "").trim()));
-          if (!yesBtn) {
-            for (const cp of document.querySelectorAll('[class*="confirmPanel"]')) {
-              yesBtn = [...cp.querySelectorAll("button")].find((b) =>
-                /^yes$/i.test((b.textContent || "").trim()),
-              );
-              if (yesBtn) break;
-            }
-          }
-          if (yesBtn) break;
-
-          // Priority 2: BUY button (intermediate step on mobile)
-          if (!clickedBuyBtn && panelBtns.length > 0) {
-            const interimBuy = panelBtns.find((b) =>
-              /^buy$/i.test((b.textContent || "").trim()),
-            );
-            if (interimBuy) {
-              console.log(`[AutoFly] clicking intermediate BUY for ${itemName}`);
-              try { interimBuy.click(); } catch (e) {}
-              clickedBuyBtn = true;
-              await delay(400);
-              continue;
-            }
+        // Iterate the user-ordered shopping list — first entry = highest priority.
+        const activeList = loadShoppingList();
+        for (const listItem of activeList) {
+          if (remainingSlots <= 0) {
+            console.log("[AutoFly] Purchase limit reached — stopping purchases.");
+            break;
           }
 
-          await delay(100);
-        }
+          const lowerItem = listItem.toLowerCase();
+          let matchKey = null;
+          for (const shopName of nameToRow.keys()) {
+            if (shopName.includes(lowerItem) || lowerItem.includes(shopName)) {
+              matchKey = shopName;
+              break;
+            }
+          }
+          if (!matchKey) continue;
 
-        if (yesBtn) {
-          try { yesBtn.click(); } catch (e) {}
-          boughtAny = true;
-          console.log(`[AutoFly] confirmed purchase of ${itemName}`);
-          await delay(800);
-        } else if (clickedBuyBtn) {
-          // BUY was clicked but no Yes/No appeared — purchase may have gone
-          // through directly (e.g. "Abroad Buy No Confirm" mode).
-          boughtAny = true;
-          console.log(`[AutoFly] BUY clicked for ${itemName} (no Yes/No panel)`);
-          await delay(800);
-        } else {
-          console.warn(
-            "[AutoFly] buy confirmation not found for",
-            itemName,
-            "(panel:",
-            panelId,
-            ")",
+          const row = nameToRow.get(matchKey);
+          nameToRow.delete(matchKey); // prevent buying the same row twice
+
+          const nameCell = row.querySelector('[data-tt-content-type="name"]');
+          const buyCell = row.querySelector('[data-tt-content-type="buy"]');
+          const amountCell = row.querySelector('[data-tt-content-type="amount"]');
+          const itemName = nameCell.textContent.trim();
+
+          itemsAvailable = true;
+          console.log(`[AutoFly] Buying ${itemName} (list entry: "${listItem}")`);
+
+          // 1) Fill the maximum amount via the max (wai-btn) button.
+          // On mobile the amount column is CSS-hidden; the max-fill element is a
+          // <span class="wai-btn"> — not an input or button — so target it first.
+          const maxBtn = (amountCell || row).querySelector(
+            '[class*="wai-btn"], .input-money-symbol input.wai-btn, .input-money-symbol button, input.wai-btn',
           );
+          if (maxBtn) {
+            safeClick(maxBtn);
+            await delay(500);
+          }
+
+          // 2) Click the cart/buy button — opens the confirmation panel.
+          const buyBtn = buyCell.querySelector("button");
+          if (!buyBtn) {
+            console.warn("[AutoFly] no buy button for", itemName);
+            continue;
+          }
+          const panelId = buyBtn.getAttribute("aria-controls"); // item-<id>-buyPanel
+          safeClick(buyBtn);
+          await delay(300);
+
+          // 3) Two-step mobile flow:
+          //    Step A — intermediate panel shows qty + "BUY" button; click it.
+          //    Step B — Yes/No confirmation appears; click "Yes".
+          //    Desktop skips step A (Yes/No appears directly after the cart click).
+          let yesBtn = null;
+          let clickedBuyBtn = false;
+          const deadline = Date.now() + 6000;
+          while (Date.now() < deadline) {
+            const panel = panelId ? document.getElementById(panelId) : null;
+            const panelBtns = panel ? [...panel.querySelectorAll("button")] : [];
+
+            // Priority 1: Yes button (final step on both mobile and desktop)
+            yesBtn = panelBtns.find((b) => /^yes$/i.test((b.textContent || "").trim()));
+            if (!yesBtn) {
+              for (const cp of document.querySelectorAll('[class*="confirmPanel"]')) {
+                yesBtn = [...cp.querySelectorAll("button")].find((b) =>
+                  /^yes$/i.test((b.textContent || "").trim()),
+                );
+                if (yesBtn) break;
+              }
+            }
+            if (yesBtn) break;
+
+            // Priority 2: BUY button (intermediate step on mobile)
+            if (!clickedBuyBtn && panelBtns.length > 0) {
+              const interimBuy = panelBtns.find((b) =>
+                /^buy$/i.test((b.textContent || "").trim()),
+              );
+              if (interimBuy) {
+                console.log(`[AutoFly] clicking intermediate BUY for ${itemName}`);
+                try { interimBuy.click(); } catch (e) {}
+                clickedBuyBtn = true;
+                await delay(400);
+                continue;
+              }
+            }
+
+            await delay(100);
+          }
+
+          if (yesBtn) {
+            try { yesBtn.click(); } catch (e) {}
+            boughtAny = true;
+            remainingSlots--;
+            console.log(`[AutoFly] confirmed purchase of ${itemName}`);
+            await delay(800);
+          } else if (clickedBuyBtn) {
+            // BUY was clicked but no Yes/No appeared — purchase may have gone
+            // through directly (e.g. "Abroad Buy No Confirm" mode).
+            boughtAny = true;
+            remainingSlots--;
+            console.log(`[AutoFly] BUY clicked for ${itemName} (no Yes/No panel)`);
+            await delay(800);
+          } else {
+            console.warn(
+              "[AutoFly] buy confirmation not found for",
+              itemName,
+              "(panel:",
+              panelId,
+              ")",
+            );
+          }
         }
+      } // end else (slots available)
+
+      if (!itemsAvailable) {
+        console.log("[AutoFly] No SHOPPING_LIST items available at this destination — flying back.");
+      } else if (!boughtAny) {
+        console.log("[AutoFly] Items matched but none bought successfully.");
       }
 
-      if (!boughtAny) {
-        console.log(
-          "[AutoFly] No SHOPPING_LIST items available at this destination — nothing bought.",
-        );
-      }
-
-      // Buying finished — now travel home.
+      // Buying finished (or nothing to buy) — travel home.
       console.log("[AutoFly] Finished shopping. Travelling home...");
       const travelHomeBtn = document.querySelector(
         '[aria-controls="travel-home-panel"]',
@@ -1261,6 +1511,10 @@
   // Independent hospital check on load — shows the revive countdown whenever
   // hospitalised, regardless of the fly-out/fly-back toggles.
   initHospitalWatch();
+
+  // Travel arrival watch — schedules a reload when in-flight, so the page
+  // doesn't hang and miss the abroad shopping + fly-back trigger.
+  initTravelWatch();
 
   // Expose helpers for console testing and manual extraction
   try {
