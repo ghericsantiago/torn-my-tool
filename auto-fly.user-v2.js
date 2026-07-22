@@ -24,7 +24,7 @@
   const VALID_DESTINATIONS = [
     "Mexico", "Cayman Islands", "Canada", "Hawaii",
     "United Kingdom", "Argentina", "Switzerland", "Japan",
-    "China", "United Arab Emirates", "South Africa",
+    "China", "UAE", "South Africa",
   ];
 
   const SHOPPING_LIST_DEFAULT = [
@@ -42,11 +42,11 @@
   function loadOptions() {
     try {
       return Object.assign(
-        { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false },
+        { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5 },
         JSON.parse(localStorage.getItem(OPTS_KEY) || "{}")
       );
     } catch (e) {
-      return { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false };
+      return { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5 };
     }
   }
   function saveOptions(o) {
@@ -59,7 +59,10 @@
   function loadFlightPlan() {
     try {
       const plan = JSON.parse(localStorage.getItem(PLAN_KEY) || "[]");
-      if (Array.isArray(plan)) return plan.map(f => Object.assign({ loop: false }, f));
+      if (Array.isArray(plan)) return plan.map(f => {
+        if (f.destination === "United Arab Emirates") f.destination = "UAE";
+        return Object.assign({ loop: false }, f);
+      });
     } catch (e) {}
     return [];
   }
@@ -77,13 +80,17 @@
   }
 
   // First "pending" flight that is ready to depart.
-  // Scheduled (non-loop) flights take priority; loop flights are always ready and act as filler.
+  // Priority: scheduled flights (time passed) > unscheduled flights (no time = fire immediately) > loop flights (filler).
   function getNextReadyFlight() {
     const now = getTCTTime();
     const plan = loadFlightPlan();
-    const scheduled = plan.find(f => f.status === "pending" && !f.loop && f.departureTime <= now);
-    if (scheduled) return scheduled;
-    return plan.find(f => f.status === "pending" && f.loop) || null;
+    // Flights execute strictly in list order. The first pending flight blocks
+    // everything below it. Loop flights keep resetting to pending (blocking)
+    // until untagged. Scheduled flights wait for their time before firing.
+    const next = plan.find(f => f.status === "pending");
+    if (!next) return null;
+    if (!next.loop && next.departureTime && next.departureTime > now) return null;
+    return next;
   }
 
   // The flight currently marked as in-progress
@@ -615,15 +622,17 @@
     if (!nextFlight) {
       // Show countdown to the next scheduled departure
       const plan = loadFlightPlan();
-      const pending = plan.filter(f => f.status === "pending");
-      if (pending.length > 0) {
-        const soonest = pending.slice().sort((a, b) => a.departureTime.localeCompare(b.departureTime))[0];
+      const pending = plan.filter(f => f.status === "pending" && !f.loop);
+      // Pending flights with no time are always ready — getNextReadyFlight should have caught them;
+      // only show countdown for flights that actually have a future departure time.
+      const scheduled = pending.filter(f => f.departureTime);
+      if (scheduled.length > 0) {
         const now = getTCTTime();
-        // Calculate minutes until departure (wraps at midnight)
+        const soonest = scheduled.slice().sort((a, b) => a.departureTime.localeCompare(b.departureTime))[0];
         const [nh, nm] = now.split(":").map(Number);
         const [dh, dm] = soonest.departureTime.split(":").map(Number);
         let diffMin = (dh * 60 + dm) - (nh * 60 + nm);
-        if (diffMin < 0) diffMin += 1440; // next day
+        if (diffMin < 0) diffMin += 1440; // wraps at midnight
         const h = Math.floor(diffMin / 60), m = diffMin % 60;
         setPanelStatus(
           `Next: ${soonest.destination} at ${soonest.departureTime} TCT (in ${h > 0 ? h + "h " : ""}${m}m)`,
@@ -653,6 +662,13 @@
     if (isTravelPage()) {
       await clickTravelDestination(nextFlight.destination);
       await wait(1500);
+    }
+
+    // Pre-fly countdown — gives time to withdraw money before departing from Torn
+    const preflyDelay = Math.max(0, options.preflyDelay ?? 5);
+    for (let i = preflyDelay; i > 0; i--) {
+      setPanelStatus(`Flying to ${nextFlight.destination} in ${i}s — withdraw money if needed!`, "#f0a500");
+      await wait(1000);
     }
 
     if (options.skipWarnings && clickFlyContinueControl()) {
@@ -739,7 +755,7 @@
       let statusColor, statusIcon;
       if (flight.status === "done") { statusColor = "#555"; statusIcon = "✓"; }
       else if (flight.status === "flying") { statusColor = "#4db8ff"; statusIcon = "✈"; }
-      else if (flight.loop || flight.departureTime <= now) { statusColor = "#44cc88"; statusIcon = "●"; }
+      else if (flight.loop || !flight.departureTime || flight.departureTime <= now) { statusColor = "#44cc88"; statusIcon = "●"; }
       else { statusColor = "#eee"; statusIcon = "○"; }
 
       const row = document.createElement("div");
@@ -752,7 +768,9 @@
         : "padding:1px 5px;background:#222;border:1px solid #444;color:#555;border-radius:3px;cursor:pointer;font-size:11px;";
       const timeLabel = flight.loop
         ? `<span style="color:#4f4;font-size:10px;min-width:40px;font-weight:bold;" title="Loop — ignores schedule time">∞</span>`
-        : `<span style="color:#aaa;font-size:11px;min-width:40px;font-weight:bold;">${escHtml(flight.departureTime)}</span>`;
+        : flight.departureTime
+          ? `<span style="color:#aaa;font-size:11px;min-width:40px;font-weight:bold;">${escHtml(flight.departureTime)}</span>`
+          : `<span style="color:#44cc88;font-size:10px;min-width:40px;font-weight:bold;" title="No scheduled time — flies when ready">ASAP</span>`;
       row.innerHTML = [
         `<span style="color:${statusColor};font-size:13px;min-width:18px;text-align:center;">${statusIcon}</span>`,
         timeLabel,
@@ -824,6 +842,12 @@
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="When all flights are done, reset the whole plan and start over automatically">
             <input id="tm-af2-repeat-plan" type="checkbox"> Loop plan &#x21ba;
           </label>
+          <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Seconds to wait on the travel page before clicking Travel — use this to withdraw money first">
+            Delay:
+            <input id="tm-af2-prefly-delay" type="number" min="0" max="120" step="1"
+              style="width:44px;padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;text-align:center;">
+            s
+          </label>
         </div>
 
         <!-- Flight Plan -->
@@ -838,11 +862,12 @@
             <select id="tm-af2-new-dest" style="flex:1;min-width:130px;padding:4px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;">
               ${VALID_DESTINATIONS.map(d => `<option>${escHtml(d)}</option>`).join("")}
             </select>
-            <input id="tm-af2-new-time" type="time" value="12:00"
-              style="padding:4px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;width:100px;">
+            <input id="tm-af2-new-time" type="text" placeholder="HH:MM" maxlength="5"
+              title="Enter time in TCT (UTC) 24-hour format, e.g. 14:30. Leave blank to fly immediately (ASAP)."
+              style="padding:4px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;width:70px;">
             <button id="tm-af2-add-flight" style="padding:4px 10px;border-radius:4px;border:1px solid #555;background:#333;color:#eee;cursor:pointer;font-size:12px;white-space:nowrap;">+ Add Flight</button>
           </div>
-          <div style="color:#555;font-size:10px;margin-top:4px;">Times are in TCT (UTC). ● = ready. ✈ = flying. ✓ = done. &#x21bb; = loop (repeats immediately, ignores schedule time).</div>
+          <div style="color:#555;font-size:10px;margin-top:4px;">Time is optional (TCT/UTC). ASAP = no time set, flies when ready. ● = ready. ✈ = flying. ✓ = done. &#x21bb; = loop.</div>
         </details>
 
         <!-- Shopping List -->
@@ -870,12 +895,14 @@
     const flyBackEl = document.getElementById("tm-af2-fly-back");
     const skipEl = document.getElementById("tm-af2-skip-warnings");
     const repeatEl = document.getElementById("tm-af2-repeat-plan");
+    const delayEl = document.getElementById("tm-af2-prefly-delay");
 
     if (autoEl) {
       autoEl.checked = !!options.autoEnabled;
       flyBackEl && (flyBackEl.checked = !!options.flyBackEnabled);
       skipEl && (skipEl.checked = !!options.skipWarnings);
       repeatEl && (repeatEl.checked = !!options.repeatPlan);
+      delayEl && (delayEl.value = String(options.preflyDelay ?? 5));
 
       autoEl.addEventListener("change", () => {
         options.autoEnabled = !!autoEl.checked;
@@ -890,6 +917,12 @@
       });
       repeatEl && repeatEl.addEventListener("change", () => {
         options.repeatPlan = !!repeatEl.checked; saveOptions(options);
+      });
+      delayEl && delayEl.addEventListener("change", () => {
+        const v = Math.max(0, Math.min(120, parseInt(delayEl.value, 10) || 0));
+        delayEl.value = String(v);
+        options.preflyDelay = v;
+        saveOptions(options);
       });
     }
 
@@ -919,7 +952,7 @@
           const saveS = "padding:1px 5px;background:#1a3a1a;border:1px solid #2a6a2a;color:#6f6;border-radius:3px;cursor:pointer;font-size:11px;";
           const cancelS = "padding:1px 5px;background:#220000;border:1px solid #622;color:#f66;border-radius:3px;cursor:pointer;font-size:11px;";
           row.innerHTML = [
-            `<input type="time" data-edit-time="${idx}" value="${escHtml(flight.departureTime)}" style="${timeInpS}">`,
+            `<input type="text" placeholder="HH:MM" maxlength="5" data-edit-time="${idx}" value="${escHtml(flight.departureTime)}" style="${timeInpS}">`,
             `<select data-edit-dest="${idx}" style="${destSelS}">`,
             VALID_DESTINATIONS.map(d => `<option${d === flight.destination ? " selected" : ""}>${escHtml(d)}</option>`).join(""),
             `</select>`,
@@ -937,8 +970,8 @@
           const row = btn.closest("div");
           const newTime = (row.querySelector("input[data-edit-time]") || {}).value || "";
           const newDest = (row.querySelector("select[data-edit-dest]") || {}).value || "";
-          if (newTime && newDest && plan[idx]) {
-            plan[idx].departureTime = newTime;
+          if (newDest && plan[idx]) {
+            plan[idx].departureTime = newTime; // empty string = no scheduled time, fires ASAP
             plan[idx].destination = newDest;
             // Re-activate "done" flights that are being rescheduled
             if (plan[idx].status === "done") plan[idx].status = "pending";
@@ -966,6 +999,7 @@
           else if (action === "down" && idx < plan.length - 1) [plan[idx], plan[idx + 1]] = [plan[idx + 1], plan[idx]];
           saveFlightPlan(plan);
           renderFlightPlan();
+          autoFlyCheck();
         }
       });
     }
@@ -977,7 +1011,7 @@
         const destEl = document.getElementById("tm-af2-new-dest");
         const timeEl = document.getElementById("tm-af2-new-time");
         const dest = (destEl && destEl.value) || "";
-        const time = (timeEl && timeEl.value) || "12:00";
+        const time = (timeEl && timeEl.value) || "";
         if (!dest) return;
         const plan = loadFlightPlan();
         plan.push({ id: genId(), destination: dest, departureTime: time, status: "pending", loop: false });
