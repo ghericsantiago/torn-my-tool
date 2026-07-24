@@ -264,10 +264,10 @@
             `[Vault Script] Traveling detected. Destination: ${travel.destination}. Will reload in ${travel.secondsRemaining} seconds (${travel.minutesRemaining} minutes)`,
           );
 
-          let countdown = travel.secondsRemaining;
           if (travelCountdownInterval) {
             clearInterval(travelCountdownInterval);
           }
+          const travelEndAt = Date.now() + Math.max(0, Math.floor(travel.secondsRemaining)) * 1000;
           const updateTravelUI = (sec) => {
             const el = document.getElementById("tm-travel-countdown");
             if (!el) return;
@@ -281,24 +281,28 @@
               el.style.display = "inline";
             }
           };
-          updateTravelUI(countdown);
-          travelCountdownInterval = setInterval(() => {
-            countdown--;
+          const renderTravel = () => {
+            const countdown = Math.max(0, Math.ceil((travelEndAt - Date.now()) / 1000));
+            updateTravelUI(countdown);
             if (countdown <= 0) {
               clearInterval(travelCountdownInterval);
               travelCountdownInterval = null;
-              updateTravelUI(0);
               console.log(
                 "[Vault Script] Travel time expired. Reloading page...",
               );
               location.reload();
               return;
             }
-            updateTravelUI(countdown);
             console.log(
               `[Vault Script] Travel reload countdown: ${countdown} seconds remaining...`,
             );
-          }, 1000);
+          };
+          renderTravel();
+          travelCountdownInterval = setInterval(renderTravel, 1000);
+          document.addEventListener("visibilitychange", function onTravelVisible() {
+            if (!document.hidden) { renderTravel(); }
+            if (!travelCountdownInterval) document.removeEventListener("visibilitychange", onTravelVisible);
+          });
 
           travelingCheckInterval = setInterval(() => {
             if (

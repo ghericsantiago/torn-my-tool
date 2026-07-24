@@ -209,8 +209,9 @@
       clearInterval(reviveCountdownTimer);
       reviveCountdownTimer = null;
     }
-    let remaining = Math.max(0, Math.floor(secs));
+    const endAt = Date.now() + Math.max(0, Math.floor(secs)) * 1000;
     const render = () => {
+      const remaining = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
       // Re-acquire (re-create) the badge every tick — the SPA can wipe
       // body-appended nodes on re-render, which would otherwise leave us
       // updating a detached element that's no longer on screen.
@@ -236,10 +237,13 @@
         }, 4000);
         return;
       }
-      remaining--;
     };
     render();
     reviveCountdownTimer = setInterval(render, 1000);
+    document.addEventListener("visibilitychange", function onVisible() {
+      if (!document.hidden) { render(); }
+      if (!reviveCountdownTimer) document.removeEventListener("visibilitychange", onVisible);
+    });
   }
 
   // Independent hospital check that runs on load regardless of fly settings, so
@@ -289,8 +293,9 @@
       clearInterval(travelCountdownTimer);
       travelCountdownTimer = null;
     }
-    let remaining = Math.max(0, Math.floor(secs));
+    const endAt = Date.now() + Math.max(0, Math.floor(secs)) * 1000;
     const render = () => {
+      const remaining = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
       const badge = getCountdownBadge();
       badge.style.borderColor = "#4db8ff";
       badge.style.color = "#4db8ff";
@@ -310,10 +315,13 @@
         travelCountdownTimer = null;
         return;
       }
-      remaining--;
     };
     render();
     travelCountdownTimer = setInterval(render, 1000);
+    document.addEventListener("visibilitychange", function onVisible() {
+      if (!document.hidden) { render(); }
+      if (!travelCountdownTimer) document.removeEventListener("visibilitychange", onVisible);
+    });
   }
 
   function startTravelDomPoller() {
