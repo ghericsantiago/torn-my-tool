@@ -227,12 +227,33 @@
       b.id = "tm-af2-badge";
       b.style.cssText = [
         "position:fixed","bottom:84px","right:16px","max-width:220px",
-        "padding:8px 12px","background:#1a1a1a","border:2px solid #f0a500",
+        "padding:8px 12px 8px 12px","background:#1a1a1a","border:2px solid #f0a500",
         "border-radius:10px","color:#f0a500","font-weight:bold",
         "font-family:Arial,sans-serif","font-size:13px","line-height:1.3",
         "z-index:999999","box-shadow:0 3px 10px rgba(0,0,0,0.6)",
-        "display:none","text-align:center","pointer-events:none",
+        "display:none","text-align:center","pointer-events:auto","position:fixed",
       ].join(";");
+
+      const textSpan = document.createElement("span");
+      textSpan.id = "tm-af2-badge-text";
+      b.appendChild(textSpan);
+
+      const closeBtn = document.createElement("button");
+      closeBtn.textContent = "×";
+      closeBtn.title = "Hide";
+      closeBtn.style.cssText = [
+        "position:absolute","top:2px","right:5px",
+        "background:none","border:none","color:#888",
+        "cursor:pointer","font-size:15px","line-height:1","padding:0",
+        "font-weight:bold",
+      ].join(";");
+      closeBtn.addEventListener("click", () => {
+        b.dataset.userHidden = "1";
+        b.style.display = "none";
+      });
+      b.appendChild(closeBtn);
+
+      b.style.position = "fixed";
       document.body.appendChild(b);
     }
     return b;
@@ -261,6 +282,7 @@
   function setReviveCountdown(secs) {
     if (reviveCountdownTimer) { clearInterval(reviveCountdownTimer); reviveCountdownTimer = null; }
     const endAt = Date.now() + Math.max(0, Math.floor(secs)) * 1000;
+    getCountdownBadge().dataset.userHidden = "";
     const render = () => {
       const remaining = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
       const badge = getCountdownBadge();
@@ -270,8 +292,9 @@
         ? "Out of hospital — resuming…"
         : `In hospital — ${Math.floor(remaining / 60)}m ${remaining % 60}s`;
       setPanelStatus(text);
-      badge.textContent = text;
-      badge.style.display = "";
+      const textEl = document.getElementById("tm-af2-badge-text");
+      if (textEl) textEl.textContent = text;
+      if (!badge.dataset.userHidden) badge.style.display = "";
       if (remaining <= 0) {
         clearInterval(reviveCountdownTimer); reviveCountdownTimer = null;
         setTimeout(() => {
@@ -292,6 +315,7 @@
   function setTravelCountdown(secs, dest) {
     if (travelCountdownTimer) { clearInterval(travelCountdownTimer); travelCountdownTimer = null; }
     const endAt = Date.now() + Math.max(0, Math.floor(secs)) * 1000;
+    getCountdownBadge().dataset.userHidden = "";
     const render = () => {
       const remaining = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
       const badge = getCountdownBadge();
@@ -301,9 +325,10 @@
         ? `Arrived at ${dest} — reloading…`
         : `Flying to ${dest} — ${Math.floor(remaining / 60)}m ${remaining % 60}s`;
       setPanelStatus(text, "#4db8ff");
-      badge.textContent = text;
-      badge.style.display = "";
-      if (remaining <= 0) { clearInterval(travelCountdownTimer); travelCountdownTimer = null; }
+      const textEl = document.getElementById("tm-af2-badge-text");
+      if (textEl) textEl.textContent = text;
+      if (!badge.dataset.userHidden) badge.style.display = "";
+      if (remaining <= 0) { clearInterval(travelCountdownTimer); travelCountdownTimer = null; return; }
     };
     render();
     travelCountdownTimer = setInterval(render, 1000);
