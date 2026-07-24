@@ -7,6 +7,7 @@
 // @match        https://www.torn.com
 // @match        https://www.torn.com/index.php
 // @match        https://www.torn.com/page.php?sid=travel*
+// @match        https://www.torn.com/gym.php
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
@@ -42,11 +43,11 @@
   function loadOptions() {
     try {
       return Object.assign(
-        { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5 },
+        { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5, gymEnabled: false, gymStat: "strength" },
         JSON.parse(localStorage.getItem(OPTS_KEY) || "{}")
       );
     } catch (e) {
-      return { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5 };
+      return { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5, gymEnabled: false, gymStat: "strength" };
     }
   }
   function saveOptions(o) {
@@ -147,6 +148,9 @@
       document.querySelector("#travel-root") ||
       (location.pathname.includes("page.php") && location.search.includes("sid=travel"))
     );
+  }
+  function isGymPage() {
+    return !!(document.querySelector("#gymroot") || location.pathname.includes("gym.php"));
   }
   function isAbroad() {
     const b = document.body;
@@ -252,10 +256,13 @@
   }
 
   // =================== COUNTDOWNS ===================
+  // Uses wall-clock end timestamps instead of a decrementing counter so that
+  // browser tab throttling cannot cause the display to drift behind real time.
   function setReviveCountdown(secs) {
     if (reviveCountdownTimer) { clearInterval(reviveCountdownTimer); reviveCountdownTimer = null; }
-    let remaining = Math.max(0, Math.floor(secs));
+    const endAt = Date.now() + Math.max(0, Math.floor(secs)) * 1000;
     const render = () => {
+      const remaining = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
       const badge = getCountdownBadge();
       badge.style.borderColor = "#f0a500";
       badge.style.color = "#f0a500";
@@ -271,18 +278,22 @@
           const b = document.getElementById("tm-af2-badge");
           if (b) b.style.display = "none";
         }, 4000);
-        return;
       }
-      remaining--;
     };
     render();
     reviveCountdownTimer = setInterval(render, 1000);
+    // Snap display back to correct time immediately when tab regains focus
+    document.addEventListener("visibilitychange", function onVisible() {
+      if (!document.hidden) { render(); }
+      if (!reviveCountdownTimer) document.removeEventListener("visibilitychange", onVisible);
+    });
   }
 
   function setTravelCountdown(secs, dest) {
     if (travelCountdownTimer) { clearInterval(travelCountdownTimer); travelCountdownTimer = null; }
-    let remaining = Math.max(0, Math.floor(secs));
+    const endAt = Date.now() + Math.max(0, Math.floor(secs)) * 1000;
     const render = () => {
+      const remaining = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
       const badge = getCountdownBadge();
       badge.style.borderColor = "#4db8ff";
       badge.style.color = "#4db8ff";
@@ -292,11 +303,14 @@
       setPanelStatus(text, "#4db8ff");
       badge.textContent = text;
       badge.style.display = "";
-      if (remaining <= 0) { clearInterval(travelCountdownTimer); travelCountdownTimer = null; return; }
-      remaining--;
+      if (remaining <= 0) { clearInterval(travelCountdownTimer); travelCountdownTimer = null; }
     };
     render();
     travelCountdownTimer = setInterval(render, 1000);
+    document.addEventListener("visibilitychange", function onVisible() {
+      if (!document.hidden) { render(); }
+      if (!travelCountdownTimer) document.removeEventListener("visibilitychange", onVisible);
+    });
   }
 
   // =================== HOSPITAL WATCH ===================
@@ -564,12 +578,117 @@
     }
   }
 
+  // =================== GYM ===================
+  async function getEnergyStatus() {
+    const data = await apiRequest("user", "bars");
+    const e = data.energy || {};
+    return { current: Number(e.current || 0), maximum: Number(e.maximum || 0), isFull: Number(e.current) >= Number(e.maximum) && Number(e.maximum) > 0 };
+  }
+
+  async function processGymTraining() {
+    options = loadOptions();
+    const stat = (options.gymStat || "strength").toLowerCase();
+    console.log(`[AutoFly2] Gym: training ${stat}`);
+    setPanelStatus(`Auto-gym: training ${stat}…`, "#f0a500");
+
+    // Wait for the gym root to fully render
+    await new Promise(resolve => {
+      if (document.querySelector("#gymroot ul")) return resolve();
+      const obs = new MutationObserver(() => { if (document.querySelector("#gymroot ul")) { obs.disconnect(); resolve(); } });
+      obs.observe(document.body, { childList: true, subtree: true });
+      setTimeout(() => { obs.disconnect(); resolve(); }, 10000);
+    });
+    await wait(500);
+
+    // Find the stat list item by class substring (e.g. li[class*="strength"])
+    const statLi = document.querySelector(`#gymroot li[class*="${stat}"]`);
+    if (!statLi) {
+      setPanelStatus(`Auto-gym: ${stat} not found`, "#f66");
+      console.warn(`[AutoFly2] Gym: no li for ${stat}`);
+      return;
+    }
+
+    // Check if locked at this gym
+    if (statLi.className.includes("locked")) {
+      setPanelStatus(`Auto-gym: ${stat} unavailable at this gym`, "#f66");
+      console.warn(`[AutoFly2] Gym: ${stat} is locked`);
+      return;
+    }
+
+    // Find enabled train button
+    const trainBtn = statLi.querySelector(`button[aria-label="Train ${stat}"]:not([disabled])`);
+    if (!trainBtn) {
+      setPanelStatus(`Auto-gym: ${stat} train button unavailable`, "#f66");
+      return;
+    }
+
+    // Parse energy cost per train from description text ("25 energy per train")
+    const descText = statLi.querySelector('[class*="description"]')?.textContent || "";
+    const costMatch = descText.match(/(\d+)\s*energy per train/i);
+    const costPerTrain = costMatch ? parseInt(costMatch[1], 10) : 25;
+
+    // Parse current energy from gym notification ("You have 150/150 energy")
+    const energyEl = document.querySelector('[class*="energy___"]');
+    let currentEnergy = 0;
+    if (energyEl) {
+      const m = energyEl.textContent.match(/(\d+)\s*\/\s*(\d+)/);
+      if (m) currentEnergy = parseInt(m[1], 10);
+    }
+
+    const maxTrains = Math.floor(currentEnergy / costPerTrain);
+    if (maxTrains <= 0) {
+      setPanelStatus("Auto-gym: not enough energy", "#666");
+      return;
+    }
+
+    // Set the training count input
+    const trainInput = statLi.querySelector('input[class*="input"]');
+    if (trainInput) {
+      trainInput.focus && trainInput.focus();
+      trainInput.value = String(maxTrains);
+      trainInput.dispatchEvent(new Event("input", { bubbles: true }));
+      trainInput.dispatchEvent(new Event("change", { bubbles: true }));
+      trainInput.blur && trainInput.blur();
+    }
+    await wait(300);
+
+    safeClick(trainBtn);
+    console.log(`[AutoFly2] Gym: clicked TRAIN ${stat} x${maxTrains} (${maxTrains * costPerTrain} energy)`);
+    setPanelStatus(`Gym: trained ${stat} ×${maxTrains} — going home…`, "#44cc88");
+
+    await wait(2500);
+    location.href = "/index.php";
+  }
+
+  async function checkAndGoToGym() {
+    options = loadOptions();
+    if (!options.gymEnabled) return false;
+    let energy;
+    try { energy = await getEnergyStatus(); }
+    catch (e) { console.warn("[AutoFly2] Energy check failed", e); return false; }
+    if (!energy.isFull) {
+      console.log(`[AutoFly2] Energy ${energy.current}/${energy.maximum} — not full, skipping gym`);
+      return false;
+    }
+    console.log("[AutoFly2] Energy full — navigating to gym");
+    setPanelStatus("Energy full — going to gym…", "#44cc88");
+    await wait(500);
+    location.href = "/gym.php";
+    return true;
+  }
+
   // =================== AUTO-FLY CHECK ===================
   // Runs every 60s when autoEnabled. Compares current TCT to flight plan.
   async function autoFlyCheck() {
     options = loadOptions();
     if (!options.autoEnabled) return;
     await wait(500);
+
+    // On gym page — run training
+    if (isGymPage()) {
+      await processGymTraining();
+      return;
+    }
 
     // In-flight — initTravelWatch handles it
     if (isTraveling()) {
@@ -616,6 +735,10 @@
       setPanelStatus("In hospital — paused");
       return;
     }
+
+    // Gym takes priority over flights — go train if energy is full
+    const wentToGym = await checkAndGoToGym();
+    if (wentToGym) return;
 
     // Find the next flight ready to depart
     const nextFlight = getNextReadyFlight();
@@ -870,6 +993,25 @@
           <div style="color:#555;font-size:10px;margin-top:4px;">Time is optional (TCT/UTC). ASAP = no time set, flies when ready. ● = ready. ✈ = flying. ✓ = done. &#x21bb; = loop.</div>
         </details>
 
+        <!-- Gym -->
+        <details id="tm-af2-gym-toggle" style="flex:1 1 100%;border-top:1px solid #333;padding-top:6px;">
+          <summary style="cursor:pointer;color:#aaa;font-size:12px;user-select:none;list-style:none;font-weight:bold;">Auto-Gym &#x1F3CB;</summary>
+          <div style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Automatically go to gym and train when energy is full (priority over flights)">
+              <input id="tm-af2-gym-enabled" type="checkbox"> Enable (trains before flying when full)
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;user-select:none;">
+              Stat:
+              <select id="tm-af2-gym-stat" style="padding:2px 6px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;">
+                <option value="strength">Strength</option>
+                <option value="defense">Defense</option>
+                <option value="speed">Speed</option>
+                <option value="dexterity">Dexterity</option>
+              </select>
+            </label>
+          </div>
+        </details>
+
         <!-- Shopping List -->
         <details id="tm-af2-items-toggle" style="flex:1 1 100%;border-top:1px solid #333;padding-top:6px;">
           <summary id="tm-af2-items-summary" style="cursor:pointer;color:#aaa;font-size:12px;user-select:none;list-style:none;">Shopping List (0 items) — top = first bought</summary>
@@ -923,6 +1065,22 @@
         delayEl.value = String(v);
         options.preflyDelay = v;
         saveOptions(options);
+      });
+    }
+
+    // Gym controls
+    const gymEnabledEl = document.getElementById("tm-af2-gym-enabled");
+    const gymStatEl = document.getElementById("tm-af2-gym-stat");
+    if (gymEnabledEl) {
+      gymEnabledEl.checked = !!options.gymEnabled;
+      gymEnabledEl.addEventListener("change", () => {
+        options.gymEnabled = !!gymEnabledEl.checked; saveOptions(options);
+      });
+    }
+    if (gymStatEl) {
+      gymStatEl.value = options.gymStat || "strength";
+      gymStatEl.addEventListener("change", () => {
+        options.gymStat = gymStatEl.value; saveOptions(options);
       });
     }
 
@@ -1200,6 +1358,10 @@
   startAutoCheck();
   initHospitalWatch();
   initTravelWatch();
+  if (isGymPage()) {
+    options = loadOptions();
+    if (options.gymEnabled) processGymTraining().catch(e => console.warn("[AutoFly2] gymTraining error", e));
+  }
 
   try {
     window.tmAutoFly2 = {
