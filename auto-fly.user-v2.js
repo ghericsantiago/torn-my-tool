@@ -290,7 +290,7 @@
       badge.style.color = "#f0a500";
       const text = remaining <= 0
         ? "Out of hospital — resuming…"
-        : `In hospital — ${Math.floor(remaining / 60)}m ${remaining % 60}s`;
+        : `In hospital — ${Math.floor(remaining / 3600) > 0 ? Math.floor(remaining / 3600) + "h " : ""}${Math.floor((remaining % 3600) / 60)}m ${remaining % 60}s`;
       setPanelStatus(text);
       const textEl = document.getElementById("tm-af2-badge-text");
       if (textEl) textEl.textContent = text;
@@ -323,7 +323,7 @@
       badge.style.color = "#4db8ff";
       const text = remaining <= 0
         ? `Arrived at ${dest} — reloading…`
-        : `Flying to ${dest} — ${Math.floor(remaining / 60)}m ${remaining % 60}s`;
+        : `Flying to ${dest} — ${Math.floor(remaining / 3600) > 0 ? Math.floor(remaining / 3600) + "h " : ""}${Math.floor((remaining % 3600) / 60)}m ${remaining % 60}s`;
       setPanelStatus(text, "#4db8ff");
       const textEl = document.getElementById("tm-af2-badge-text");
       if (textEl) textEl.textContent = text;

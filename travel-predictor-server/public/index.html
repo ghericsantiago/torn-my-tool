@@ -83,9 +83,18 @@ nav {
 }
 
 .sidebar-filter {
-  padding: 8px 12px 10px;
+  padding: 0;
   border-bottom: 1px solid var(--border);
 }
+.sf-toggle {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 7px 12px; background: none; border: none;
+  font-size: 10px; font-weight: 700; letter-spacing: .8px;
+  text-transform: uppercase; color: var(--text-muted);
+  cursor: pointer; transition: background .12s;
+}
+.sf-toggle:hover { background: rgba(255,255,255,.04); }
+#sf-countries, #sf-categories { padding: 0 10px 8px; display: flex; flex-wrap: wrap; gap: 5px; }
 .sf-label {
   font-size: 10px;
   font-weight: 700;
@@ -428,85 +437,36 @@ tbody tr { border-left: 3px solid var(--rc); }
   display: flex; gap: 10px; margin-top: 22px; justify-content: flex-end;
 }
 
-/* ── TAG INPUT ─────────────────────────────────────────── */
-.tag-input-wrap {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  padding: 6px 10px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  cursor: text;
-  transition: border-color .15s;
-  min-height: 42px;
-  align-items: center;
+/* ── BROWSE-ADD MODAL ──────────────────────────────────── */
+.m-tab {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 9px 11px; gap: 6px;
+  background: none; border: none; border-bottom: 1px solid var(--border);
+  color: var(--text-dim); font-size: 12px; font-weight: 600;
+  text-align: left; cursor: pointer; transition: background .12s;
+  white-space: nowrap; overflow: hidden;
 }
-.tag-input-wrap:focus-within { border-color: var(--accent); }
-#m-tags { display: contents; }
-.tag-input-wrap input {
-  flex: 1;
-  min-width: 140px;
-  background: none;
-  border: none;
-  outline: none;
-  color: var(--text);
-  font-size: 14px;
-  font-family: inherit;
-  padding: 3px 2px;
-}
-.sel-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  background: rgba(92,124,250,.18);
-  border: 1px solid rgba(92,124,250,.35);
-  border-radius: 5px;
-  padding: 2px 4px 2px 8px;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.sel-tag-rm {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px; height: 16px;
-  border-radius: 3px;
-  cursor: pointer;
-  color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1;
-  transition: all .1s;
-}
-.sel-tag-rm:hover { background: rgba(255,107,107,.2); color: var(--red); }
+.m-tab:hover { background: rgba(255,255,255,.05); }
+.m-tab.active { background: rgba(92,124,250,.18); color: var(--text); border-left: 3px solid var(--accent); }
+.m-tab-count { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
 
-/* ── AUTOCOMPLETE ──────────────────────────────────────── */
-.ac-dropdown {
-  position: absolute;
-  left: 0; right: 0;
-  top: calc(100% + 4px);
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  max-height: 220px;
-  overflow-y: auto;
-  z-index: 300;
-  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+.m-item-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 8px; border-radius: 7px; margin-bottom: 2px;
+  transition: background .1s; user-select: none;
 }
-.ac-item {
-  padding: 9px 13px;
-  cursor: pointer;
-  font-size: 13px;
-  border-bottom: 1px solid var(--border);
-  transition: background .1s;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+.m-item-row:hover:not(.watching) { background: rgba(255,255,255,.06); }
+.m-item-row.selected { background: rgba(92,124,250,.18); }
+.m-item-row.watching { opacity: .45; cursor: default !important; }
+.m-item-check {
+  width: 20px; height: 20px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 2px solid var(--border); border-radius: 5px;
+  font-size: 13px; color: var(--text-muted);
+  transition: all .12s;
 }
-.ac-item:last-child { border-bottom: none; }
-.ac-item:hover, .ac-item.focused { background: var(--accent); color: #fff; }
+.m-item-row.selected .m-item-check { background: var(--accent); border-color: var(--accent); color: #fff; }
+.m-item-row.watching .m-item-check { background: rgba(76,175,135,.2); border-color: var(--green); color: var(--green); }
 .ac-item:hover .ac-item-sub, .ac-item.focused .ac-item-sub { color: rgba(255,255,255,.7); }
 .ac-item-sub { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 .ac-item mark { background: none; color: var(--yellow); font-weight: 700; }
@@ -652,6 +612,7 @@ tbody tr { border-left: 3px solid var(--rc); }
       <button class="mode-btn active" id="btn-tct" onclick="setTz('utc')">TCT</button>
       <button class="mode-btn" id="btn-local" onclick="setTz('local')">Local</button>
     </div>
+    <button class="btn-icon" id="btn-planner" onclick="openPlanner()" title="Travel Planner" style="font-size:15px">📅</button>
     <button class="btn-icon" id="btn-pick" onclick="openPick()" title="Best Pick Right Now" style="font-size:17px">🏆</button>
     <button class="btn-icon" id="btn-settings" onclick="openSettings()" title="Settings">⚙</button>
     <div class="ws-indicator">
@@ -671,14 +632,24 @@ tbody tr { border-left: 3px solid var(--rc); }
       <button class="btn btn-ghost" id="btn-catalog" title="Browse all items by country">Catalog</button>
     </div>
 
-    <div class="sidebar-filter">
-      <div class="sf-label">Filter by country</div>
+    <div class="sidebar-filter" id="sf-country-wrap">
+      <button class="sf-toggle" onclick="toggleSfSection('country')">
+        <span>Filter by country</span><span id="sf-country-chevron">▾</span>
+      </button>
       <div id="sf-countries"></div>
     </div>
 
     <div class="sidebar-filter" id="sf-cat-wrap" style="display:none">
-      <div class="sf-label">Filter by category</div>
+      <button class="sf-toggle" onclick="toggleSfSection('category')">
+        <span>Filter by category</span><span id="sf-category-chevron">▾</span>
+      </button>
       <div id="sf-categories"></div>
+    </div>
+
+    <div style="padding:6px 10px;border-bottom:1px solid var(--border)">
+      <input id="sf-search" type="text" placeholder="Search items…" autocomplete="off"
+        oninput="sidebarSearch=this.value;renderSidebar()"
+        style="width:100%;box-sizing:border-box;padding:5px 9px;border-radius:7px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12px">
     </div>
 
     <div class="sidebar-list" id="sidebar-list">
@@ -705,8 +676,8 @@ tbody tr { border-left: 3px solid var(--rc); }
           <button class="mode-btn" id="btn-48h"  onclick="setHours(48)">48h</button>
         </div>
         <div class="mode-toggle">
-          <button class="mode-btn active" id="btn-stock" onclick="setMode('stock')">Stock</button>
-          <button class="mode-btn"        id="btn-price" onclick="setMode('price')">Price</button>
+          <button class="mode-btn active" id="btn-stock"  onclick="setMode('stock')">Stock</button>
+          <button class="mode-btn"        id="btn-profit" onclick="setMode('profit')">Profit/Unit</button>
         </div>
       </div>
 
@@ -732,7 +703,9 @@ tbody tr { border-left: 3px solid var(--rc); }
               <th onclick="sort('qty')">Stock<span id="si-qty"></span></th>
               <th onclick="sort('cost')">Price<span id="si-cost"></span></th>
               <th onclick="sort('profit')">Profit/unit<span id="si-profit"></span></th>
+              <th onclick="sort('ppm')">Profit/min<span id="si-ppm"></span></th>
               <th onclick="sort('potential')">Potential<span id="si-potential"></span></th>
+              <th onclick="sort('cash')">Cash needed<span id="si-cash"></span></th>
               <th onclick="sort('restock')">Next Restock<span id="si-restock"></span></th>
               <th onclick="sort('dep')">Departure<span id="si-dep"></span></th>
               <th onclick="sort('conf')">Confidence<span id="si-conf"></span></th>
@@ -750,28 +723,25 @@ tbody tr { border-left: 3px solid var(--rc); }
 
 <!-- ADD MODAL -->
 <div class="overlay" id="modal">
-  <div class="modal" role="dialog" aria-modal="true">
-    <h2>Monitor Items</h2>
-    <div class="field" style="position:relative">
-      <label>Items <span id="m-sel-count" style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0"></span></label>
-      <div class="tag-input-wrap" id="tag-wrap" onclick="document.getElementById('m-item').focus()">
-        <div id="m-tags"></div>
-        <input id="m-item" type="text" placeholder="Search and pick items…" autocomplete="off" spellcheck="false">
-      </div>
-      <div id="m-dropdown" class="ac-dropdown" style="display:none"></div>
-      <div id="m-hint" style="display:none;font-size:11px;color:var(--text-muted);margin-top:5px">
-        Ctrl+click to pick multiple without closing
+  <div class="modal" role="dialog" aria-modal="true" style="max-width:860px;width:95vw">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <h2 style="margin:0;flex:1;min-width:120px">Browse &amp; Add Items</h2>
+      <input id="m-search" type="text" placeholder="Search items…" autocomplete="off"
+        oninput="addSearch=this.value;renderAddItems()"
+        style="width:180px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+      <div class="mode-toggle">
+        <button class="mode-btn active" id="m-view-country"  onclick="setAddView('country')">By Country</button>
+        <button class="mode-btn"        id="m-view-category" onclick="setAddView('category')">By Category</button>
       </div>
     </div>
-    <div class="field">
-      <label>Countries to add <span id="m-count" style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0"></span></label>
-      <div class="preview-box" id="m-preview">
-        <span style="color:var(--text-muted);font-size:12px;padding:2px">Select one or more items above…</span>
-      </div>
+    <div style="display:flex;height:430px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+      <div id="m-tabs" style="width:155px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);background:var(--surface2)"></div>
+      <div id="m-items" style="flex:1;overflow-y:auto;padding:6px 10px"></div>
     </div>
-    <div class="modal-footer">
+    <div class="modal-footer" style="margin-top:10px">
+      <span id="m-sel-info" style="flex:1;font-size:13px;color:var(--text-muted)">Click items to add to watchlist</span>
       <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" id="m-submit" onclick="submitAdd()" disabled>Add All</button>
+      <button class="btn btn-primary" id="m-submit" onclick="submitAdd()" disabled>Add</button>
     </div>
   </div>
 </div>
@@ -905,6 +875,69 @@ tbody tr { border-left: 3px solid var(--rc); }
       <span class="cat-stat" id="cat-stat"></span>
       <button class="btn btn-ghost" id="cat-refresh-btn" style="display:none" onclick="renderRecommend()">↻ Refresh</button>
       <button class="btn btn-ghost" onclick="closeCatalog()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- TRAVEL PLANNER MODAL -->
+<div class="overlay" id="planner-modal">
+  <div class="modal modal-wide" style="display:flex;flex-direction:column;padding:0;max-height:calc(100vh - 60px)" role="dialog" aria-modal="true">
+    <!-- Header -->
+    <div style="padding:20px 28px 16px;border-bottom:1px solid var(--border);flex-shrink:0">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div style="font-size:17px;font-weight:800">📅 Travel Planner</div>
+        <button class="btn btn-ghost" onclick="closePlanner()">✕ Close</button>
+      </div>
+      <!-- Inputs -->
+      <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
+        <div>
+          <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px">Starting Cash ($)</div>
+          <input id="planner-cash" type="number" min="0" step="100000" value="1000000"
+            style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 12px;font-size:14px;outline:none;font-family:inherit;width:160px;transition:border-color .15s"
+            onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px">Available Hours</div>
+          <select id="planner-hours" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 12px;font-size:14px;outline:none;font-family:inherit;cursor:pointer">
+            <option value="4">4 hours</option>
+            <option value="8">8 hours</option>
+            <option value="12">12 hours</option>
+            <option value="16" selected>16 hours</option>
+            <option value="20">20 hours</option>
+            <option value="24">24 hours</option>
+          </select>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px">Item Pool</div>
+          <select id="planner-filter" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 12px;font-size:14px;outline:none;font-family:inherit;cursor:pointer">
+            <option value="all">All items</option>
+            <option value="watched">Watched only</option>
+          </select>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px">Min Survival</div>
+          <select id="planner-survival" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:8px 12px;font-size:14px;outline:none;font-family:inherit;cursor:pointer">
+            <option value="0.10">10%+</option>
+            <option value="0.25" selected>25%+</option>
+            <option value="0.50">50%+</option>
+            <option value="0.75">75%+</option>
+          </select>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px">Optimize for</div>
+          <div style="display:flex;gap:4px">
+            <button class="sf-chip active planner-prio-btn" data-p="balanced" onclick="setPlannerPriority('balanced')">Balanced</button>
+            <button class="sf-chip planner-prio-btn"        data-p="time"     onclick="setPlannerPriority('time')">Closest</button>
+            <button class="sf-chip planner-prio-btn"        data-p="profit"   onclick="setPlannerPriority('profit')">Most Profit</button>
+            <button class="sf-chip planner-prio-btn"        data-p="chance"   onclick="setPlannerPriority('chance')">Best Chance</button>
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="runPlanner()" style="padding:9px 20px;font-size:14px;align-self:flex-end">📅 Plan My Day</button>
+      </div>
+    </div>
+    <!-- Results -->
+    <div id="planner-results" style="flex:1;overflow-y:auto;padding:20px">
+      <div style="text-align:center;color:var(--text-muted);padding:60px 20px">Configure your trip above and click <strong>Plan My Day</strong> to generate your itinerary.</div>
     </div>
   </div>
 </div>
@@ -1053,6 +1086,10 @@ function renderSidebar() {
   if (sidebarCatFilter) {
     items = items.filter(item => tornCategories[item] === sidebarCatFilter);
   }
+  if (sidebarSearch.trim()) {
+    const q = sidebarSearch.toLowerCase();
+    items = items.filter(item => item.toLowerCase().includes(q));
+  }
 
   if (!items.length) {
     list.innerHTML = `<div class="sidebar-empty">${
@@ -1065,12 +1102,21 @@ function renderSidebar() {
     const cs       = countriesFor(item);
     const isActive = item === activeItem;
     return `<div class="sidebar-group">
-      <div class="sidebar-group-header${isActive ? ' active' : ''}" onclick="selectItem('${item}')">
+      <div class="sidebar-group-header${isActive ? ' active' : ''}" onclick="selectItem('${item.replace(/'/g, "\\'")}')">
         <span class="sg-name${isActive ? ' active' : ''}">${item}</span>
         <span class="sg-count">${cs.length}</span>
       </div>
     </div>`;
   }).join('');
+}
+
+function toggleSfSection(section) {
+  sfCollapsed[section] = !sfCollapsed[section];
+  const collapsed = sfCollapsed[section];
+  const contentId = section === 'country' ? 'sf-countries' : 'sf-categories';
+  const chevronId = `sf-${section}-chevron`;
+  document.getElementById(contentId).style.display = collapsed ? 'none' : '';
+  document.getElementById(chevronId).textContent    = collapsed ? '▸' : '▾';
 }
 
 function setSidebarFilter(country) {
@@ -1206,11 +1252,18 @@ function rebuildChart() {
     if (!hd?.snapshots?.length) continue;
     const mt   = m(c);
     const col  = mt.color;
-    const yKey = chartMode === 'stock' ? 'quantity' : 'cost';
 
-    const pts = hd.snapshots
-      .filter(s => s[yKey] != null)
-      .map(s => ({ x: s.ts * 1000, y: s[yKey] }));
+    let pts;
+    if (chartMode === 'stock') {
+      pts = hd.snapshots
+        .filter(s => s.quantity != null)
+        .map(s => ({ x: s.ts * 1000, y: s.quantity }));
+    } else {
+      const sellPrice = (tornPrices[activeItem] ?? 0) * (1 - sellCommission / 100);
+      pts = hd.snapshots
+        .filter(s => s.cost != null && sellPrice > 0)
+        .map(s => ({ x: s.ts * 1000, y: Math.round(sellPrice - s.cost) }));
+    }
     if (!pts.length) continue;
 
     datasets.push({
@@ -1267,7 +1320,7 @@ function rebuildChart() {
           border: { color: '#2a2d3e' },
           title: {
             display: true,
-            text: chartMode === 'stock' ? 'Quantity' : 'Price ($)',
+            text: chartMode === 'stock' ? 'Quantity' : 'Profit/unit ($)',
             color: '#50536a', font: { size: 11 },
           },
         },
@@ -1286,7 +1339,12 @@ function rebuildChart() {
               const opts = { hour:'2-digit', minute:'2-digit', hour12: timeFmt === '12', ...(tzMode === 'utc' ? { timeZone:'UTC' } : {}) };
               return new Date(ts).toLocaleTimeString([], opts) + (tzMode === 'utc' ? ' TCT' : ' Local');
             },
-            label: item => ` ${item.dataset.label}: ${item.parsed.y}`,
+            label: item => {
+              const v = item.parsed.y;
+              if (chartMode === 'stock') return ` ${item.dataset.label}: ${v.toLocaleString()}`;
+              const sign = v >= 0 ? '+' : '';
+              return ` ${item.dataset.label}: ${sign}$${v.toLocaleString()}`;
+            },
           },
         },
         annotation: { annotations },
@@ -1298,7 +1356,7 @@ function rebuildChart() {
 function setMode(mode) {
   chartMode = mode;
   document.getElementById('btn-stock').classList.toggle('active', mode === 'stock');
-  document.getElementById('btn-price').classList.toggle('active', mode === 'price');
+  document.getElementById('btn-profit').classList.toggle('active', mode === 'profit');
   rebuildChart();
 }
 
@@ -1328,7 +1386,7 @@ function setTz(tz) {
 }
 
 /* ── Table ──────────────────────────────────────────── */
-const SORT_IDS = ['country','status','qty','cost','restock','dep','conf'];
+const SORT_IDS = ['country','status','qty','cost','profit','ppm','potential','cash','restock','dep','conf'];
 
 function sort(col) {
   if (sortKey === col) sortDir *= -1;
@@ -1345,7 +1403,7 @@ function sort(col) {
 }
 
 function sortVal(row, col) {
-  const { c, snap, dep, stats } = row;
+  const { c, snap, dep, stats, travelMinutes } = row;
   switch (col) {
     case 'country': return c;
     case 'qty':     return snap?.quantity ?? -1;
@@ -1357,10 +1415,17 @@ function sortVal(row, col) {
       const sell = tornPrices[activeItem] ?? 0;
       return (sell && snap?.cost) ? sell * (1 - sellCommission / 100) - snap.cost : -Infinity;
     }
+    case 'ppm': {
+      const sell = tornPrices[activeItem] ?? 0;
+      const pr   = (sell && snap?.cost) ? sell * (1 - sellCommission / 100) - snap.cost : null;
+      return (pr !== null && travelMinutes) ? pr / travelMinutes : -Infinity;
+    }
     case 'potential': {
       const sell = tornPrices[activeItem] ?? 0;
-      const qty  = snap?.quantity ?? 0;
-      return (sell && snap?.cost && qty) ? (sell * (1 - sellCommission / 100) - snap.cost) * Math.min(qty, travelCapacity) : -Infinity;
+      return (sell && snap?.cost) ? (sell * (1 - sellCommission / 100) - snap.cost) * travelCapacity : -Infinity;
+    }
+    case 'cash': {
+      return snap?.cost ? snap.cost * travelCapacity : -Infinity;
     }
     case 'status': {
       if (!snap || snap.quantity === 0) return -1;
@@ -1381,6 +1446,7 @@ function renderTable(cs) {
     stats: statusMap[key(c, activeItem)]?.stats,
     ts:    statusMap[key(c, activeItem)]?.ts,
     wid:   watched.find(w => w.country === c && w.item === activeItem)?.id,
+    travelMinutes: watched.find(w => w.country === c && w.item === activeItem)?.travel_minutes ?? null,
   }));
 
   rows.sort((a, b) => {
@@ -1390,11 +1456,11 @@ function renderTable(cs) {
   });
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr class="no-rows"><td colspan="11">No countries watched for this item.</td></tr>';
+    tbody.innerHTML = '<tr class="no-rows"><td colspan="13">No countries watched for this item.</td></tr>';
     return;
   }
 
-  tbody.innerHTML = rows.map(({ c, snap, dep, stats, ts, wid }) => {
+  tbody.innerHTML = rows.map(({ c, snap, dep, stats, ts, wid, travelMinutes }) => {
     const mt  = m(c);
     const bg  = getBadge(snap, stats);
     const dc  = depClass(dep);
@@ -1419,8 +1485,9 @@ function renderTable(cs) {
 
     const sell      = tornPrices[activeItem] ?? 0;
     const profit    = (sell && snap?.cost) ? sell * (1 - sellCommission / 100) - snap.cost : null;
-    const qty       = snap?.quantity ?? 0;
-    const potAmt    = (profit !== null && qty > 0) ? profit * Math.min(qty, travelCapacity) : null;
+    const potAmt    = profit !== null ? profit * travelCapacity : null;
+    const ppmAmt    = (profit !== null && travelMinutes) ? profit / travelMinutes : null;
+    const cashAmt   = snap?.cost ? snap.cost * travelCapacity : null;
     const fmtProfit = v => v === null ? '<span style="color:var(--text-muted)">—</span>'
       : v >= 0 ? `<span class="cat-profit-pos">+$${v.toLocaleString()}</span>`
                : `<span class="cat-profit-neg">-$${Math.abs(v).toLocaleString()}</span>`;
@@ -1440,7 +1507,9 @@ function renderTable(cs) {
       <td>${fmtNum(snap?.quantity)}</td>
       <td>${fmtCost(snap?.cost)}</td>
       <td>${fmtProfit(profit)}</td>
+      <td style="font-size:12px">${ppmAmt === null ? '<span style="color:var(--text-muted)">—</span>' : `<span class="${ppmAmt >= 0 ? 'cat-profit-pos' : 'cat-profit-neg'}">${ppmAmt >= 0 ? '+' : ''}$${ppmAmt.toFixed(0)}/min</span>`}</td>
       <td style="font-size:12px">${fmtProfit(potAmt)}</td>
+      <td style="font-size:12px">${cashAmt === null ? '<span style="color:var(--text-muted)">—</span>' : `<span style="color:var(--yellow);font-weight:700">$${cashAmt.toLocaleString()}</span>`}</td>
       <td>${restockHtml}</td>
       <td class="${dc}">${depContent}</td>
       <td>
@@ -1492,273 +1561,250 @@ function connectWS() {
   });
 }
 
-/* ── Modal ──────────────────────────────────────────── */
-let allYataItems  = [];   // full item list from /api/items
-let selectedItems = new Set();        // item names the user has tagged
-let countriesMap  = new Map();        // item name → [country entries]
-let acFocusIdx    = -1;
+/* ── Browse-Add modal state ─────────────────────────── */
+let addView     = 'country';
+let addTab      = null;
+let addSearch   = '';
+let addSelected = new Set();   // "Country|ItemName"
+let _addCatMap  = new Map();   // category → [{country, item}]
 
 async function openModal() {
+  addSelected.clear();
+  addView    = 'country';
+  addTab     = null;
+  addSearch  = '';
+  document.getElementById('m-search').value = '';
+  document.getElementById('m-view-country').classList.add('active');
+  document.getElementById('m-view-category').classList.remove('active');
   document.getElementById('modal').classList.add('open');
-  selectedItems.clear();
-  countriesMap.clear();
-  document.getElementById('m-item').value = '';
-  renderTags();
-  renderPreview();
-  closeDropdown();
-  document.getElementById('m-item').focus();
+  updateAddFooter();
 
-  if (!allYataItems.length) {
+  if (!catalogData?.countries) {
+    document.getElementById('m-tabs').innerHTML  = '<div style="padding:12px;font-size:12px;color:var(--text-muted)">Loading…</div>';
+    document.getElementById('m-items').innerHTML = '';
     try {
-      const r = await fetch('/api/items');
-      allYataItems = await r.json();
-    } catch { allYataItems = []; }
+      const [cr, pr, catr] = await Promise.all([
+        fetch('/api/catalog'), fetch('/api/torn-prices'), fetch('/api/torn-categories'),
+      ]);
+      if (cr.ok)   catalogData     = await cr.json();
+      if (pr.ok)   tornPrices      = await pr.json();
+      if (catr.ok) tornCategories  = await catr.json();
+    } catch {}
+  }
+  renderAddTabs();
+  if (catalogData?.countries?.length && !addTab) {
+    setAddTab(catalogData.countries[0].name);
+  } else {
+    renderAddItems();
   }
 }
 
 function closeModal() {
   document.getElementById('modal').classList.remove('open');
-  closeDropdown();
 }
 
 document.getElementById('modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeModal();
 });
 
-/* ── Tags ───────────────────────────────────────────── */
-function renderTags() {
-  const container = document.getElementById('m-tags');
-  container.innerHTML = [...selectedItems].map(name =>
-    `<span class="sel-tag">
-      ${name}
-      <span class="sel-tag-rm" onmousedown="removeTag('${name.replace(/'/g, "\\'")}')">×</span>
-    </span>`
-  ).join('');
-
-  const count = document.getElementById('m-sel-count');
-  count.textContent = selectedItems.size ? `(${selectedItems.size} selected)` : '';
-
-  const inp = document.getElementById('m-item');
-  inp.placeholder = selectedItems.size ? 'Add another…' : 'Search and pick items…';
+function setAddView(v) {
+  addView = v;
+  addTab  = null;
+  document.getElementById('m-view-country').classList.toggle('active',  v === 'country');
+  document.getElementById('m-view-category').classList.toggle('active', v === 'category');
+  renderAddTabs();
+  renderAddItems();
+  // Auto-select first tab
+  const firstBtn = document.querySelector('#m-tabs .m-tab');
+  if (firstBtn) firstBtn.click();
 }
 
-function removeTag(name) {
-  selectedItems.delete(name);
-  countriesMap.delete(name);
-  renderTags();
-  renderPreview();
+function setAddTab(tab) {
+  addTab = tab;
+  document.querySelectorAll('#m-tabs .m-tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === tab));
+  renderAddItems();
 }
 
-/* ── Preview ────────────────────────────────────────── */
-function renderPreview() {
-  const prev    = document.getElementById('m-preview');
-  const countEl = document.getElementById('m-count');
-  const submit  = document.getElementById('m-submit');
-
-  if (!selectedItems.size) {
-    prev.innerHTML = '<span style="color:var(--text-muted);font-size:12px;padding:2px">Select one or more items above…</span>';
-    countEl.textContent  = '';
-    submit.disabled      = true;
-    submit.textContent   = 'Add All';
+function renderAddTabs() {
+  const el = document.getElementById('m-tabs');
+  if (!catalogData?.countries) {
+    el.innerHTML = '<div style="padding:12px;font-size:12px;color:var(--text-muted)">Loading…</div>';
     return;
   }
 
-  // Aggregate all (country, item) pairs across all selected items
-  const already = new Set(watched.map(w => key(w.country, w.item)));
-  const allPairs = [];
-
-  for (const [itemName, entries] of countriesMap) {
-    if (entries === 'loading') continue;
-    for (const e of entries) {
-      allPairs.push({ ...e, item: itemName, dup: already.has(key(e.country, itemName)) });
+  if (addView === 'country') {
+    el.innerHTML = catalogData.countries.map(c => {
+      const mt  = m(c.name);
+      const sel = c.items.filter(i => addSelected.has(`${c.name}|${i.name}`)).length;
+      const cnt = `${sel ? `<span style="color:var(--accent);font-weight:700">${sel}/</span>` : ''}${c.items.length}`;
+      return `<button class="m-tab${addTab === c.name ? ' active' : ''}" data-tab="${c.name}" onclick="setAddTab('${c.name}')">
+        <span>${flag(mt)} ${c.name}</span><span class="m-tab-count">${cnt}</span>
+      </button>`;
+    }).join('');
+  } else {
+    // Build category map
+    _addCatMap.clear();
+    for (const c of catalogData.countries) {
+      for (const i of c.items) {
+        const cat = tornCategories[i.name] ?? 'Other';
+        if (!_addCatMap.has(cat)) _addCatMap.set(cat, []);
+        _addCatMap.get(cat).push({ country: c.name, item: i });
+      }
     }
-  }
-
-  const loading = [...selectedItems].some(n => countriesMap.get(n) === 'loading');
-  const fresh   = allPairs.filter(p => !p.dup);
-
-  if (loading) {
-    prev.innerHTML = '<span style="color:var(--text-muted);font-size:12px;padding:2px">Loading…</span>';
-    submit.disabled    = true;
-    submit.textContent = 'Loading…';
-    countEl.textContent = '';
-    return;
-  }
-
-  if (!allPairs.length) {
-    prev.innerHTML = '<span style="color:var(--text-muted);font-size:12px;padding:2px">No countries found for selected items</span>';
-    submit.disabled    = true;
-    submit.textContent = 'Add All';
-    countEl.textContent = '';
-    return;
-  }
-
-  // Group chips by item name
-  const byItem = new Map();
-  for (const p of allPairs) {
-    if (!byItem.has(p.item)) byItem.set(p.item, []);
-    byItem.get(p.item).push(p);
-  }
-
-  let html = '';
-  for (const [itemName, pairs] of byItem) {
-    html += `<div style="width:100%;font-size:10px;font-weight:700;letter-spacing:.6px;color:var(--text-muted);text-transform:uppercase;margin-top:4px;margin-bottom:2px">${itemName}</div>`;
-    html += pairs.map(p => {
-      const mt = m(p.country);
-      return `<div class="chip" style="${p.dup ? 'opacity:.45' : ''}">
-        ${flag(mt)} ${p.country}
-        <span class="chip-qty">${p.quantity}</span>
-        ${p.dup ? '<span style="color:var(--text-muted);font-size:10px">(watching)</span>' : ''}
-      </div>`;
+    el.innerHTML = [..._addCatMap.keys()].sort().map(cat => {
+      const entries = _addCatMap.get(cat);
+      const sel = entries.filter(({country, item}) => addSelected.has(`${country}|${item.name}`)).length;
+      const cnt = `${sel ? `<span style="color:var(--accent);font-weight:700">${sel}/</span>` : ''}${entries.length}`;
+      return `<button class="m-tab${addTab === cat ? ' active' : ''}" data-tab="${cat}" onclick="setAddTab('${cat}')">
+        <span>${cat}</span><span class="m-tab-count">${cnt}</span>
+      </button>`;
     }).join('');
   }
-  prev.innerHTML = html;
-
-  countEl.textContent  = `(${fresh.length} new)`;
-  submit.disabled      = fresh.length === 0;
-  submit.textContent   = fresh.length > 0
-    ? `Add ${fresh.length} combination${fresh.length === 1 ? '' : 's'}`
-    : 'Already watching all';
 }
 
-/* ── Autocomplete dropdown ───────────────────────────── */
-function closeDropdown() {
-  document.getElementById('m-dropdown').style.display = 'none';
-  document.getElementById('m-hint').style.display = 'none';
-  acFocusIdx = -1;
-}
+function renderAddItems() {
+  const el         = document.getElementById('m-items');
+  const watchedSet = new Set(watched.map(w => key(w.country, w.item)));
+  const q          = addSearch.toLowerCase();
 
-function renderDropdown(query) {
-  const dd = document.getElementById('m-dropdown');
-  const q  = query.toLowerCase().trim();
-  if (!q) { dd.style.display = 'none'; return; }
-
-  const watchedNames = new Set(watched.map(w => w.item.toLowerCase()));
-  const matches = allYataItems
-    .filter(name => name.toLowerCase().includes(q)
-      && !selectedItems.has(name)
-      && !watchedNames.has(name.toLowerCase()))
-    .slice(0, 40);
-
-  if (!matches.length) {
-    dd.innerHTML = `<div class="ac-empty">No items match "${query}"</div>`;
-    dd.style.display = 'block';
-    acFocusIdx = -1;
-    return;
+  if (!catalogData?.countries) {
+    el.innerHTML = '<div class="cat-empty">Loading…</div>'; return;
+  }
+  if (!addTab) {
+    el.innerHTML = '<div class="cat-empty">Select a tab on the left.</div>'; return;
   }
 
-  const hl = name => {
-    const idx = name.toLowerCase().indexOf(q);
-    if (idx === -1) return name;
-    return name.slice(0, idx)
-      + `<mark>${name.slice(idx, idx + q.length)}</mark>`
-      + name.slice(idx + q.length);
-  };
-
-  dd.innerHTML = matches.map(name =>
-    `<div class="ac-item" onmousedown="pickItem('${name.replace(/'/g, "\\'")}', event)">${hl(name)}</div>`
-  ).join('');
-  dd.style.display = 'block';
-  document.getElementById('m-hint').style.display = 'block';
-  acFocusIdx = -1;
-}
-
-async function pickItem(name, event) {
-  event.preventDefault(); // prevent input blur so dropdown can stay open
-  if (selectedItems.has(name)) return;
-  selectedItems.add(name);
-  countriesMap.set(name, 'loading');
-
-  const multi = event.ctrlKey || event.metaKey;
-  if (multi) {
-    renderDropdown(document.getElementById('m-item').value.trim());
-    document.getElementById('m-item').focus();
+  let rows = [];
+  if (addView === 'country') {
+    const country = catalogData.countries.find(c => c.name === addTab);
+    if (!country) return;
+    rows = country.items
+      .filter(i => !q || i.name.toLowerCase().includes(q))
+      .map(i => ({ country: addTab, item: i }));
   } else {
-    document.getElementById('m-item').value = '';
-    closeDropdown();
+    rows = (_addCatMap.get(addTab) ?? [])
+      .filter(({item}) => !q || item.name.toLowerCase().includes(q));
   }
-  renderTags();
-  renderPreview();
 
-  // Fetch countries for this item
-  try {
-    const r = await fetch(`/api/countries-for-item?item=${encodeURIComponent(name)}`);
-    const data = r.ok ? await r.json() : [];
-    countriesMap.set(name, data);
-  } catch {
-    countriesMap.set(name, []);
+  if (!rows.length) {
+    el.innerHTML = `<div class="cat-empty">No items${q ? ` matching "${addSearch}"` : ''}.</div>`; return;
   }
-  renderPreview();
+
+  // Select All header
+  const available  = rows.filter(({country, item: i}) => !watchedSet.has(key(country, i.name)));
+  const allSel     = available.length > 0 && available.every(({country, item: i}) => addSelected.has(`${country}|${i.name}`));
+  const selAllBtn  = available.length > 0
+    ? `<button onclick="toggleSelectAll()" style="
+        font-size:11px;padding:3px 10px;border-radius:6px;border:1px solid var(--border);
+        background:${allSel ? 'rgba(92,124,250,.25)' : 'var(--surface2)'};
+        color:${allSel ? 'var(--accent)' : 'var(--text-muted)'};cursor:pointer">
+        ${allSel ? '✓ Deselect All' : 'Select All'} (${available.length})
+      </button>` : '';
+  const header = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;padding:0 2px">
+    <span style="font-size:11px;color:var(--text-muted)">${rows.length} items · ${available.length} available</span>
+    ${selAllBtn}
+  </div>`;
+
+  el.innerHTML = header + rows.map(({country, item: i}) => {
+    const pairKey   = `${country}|${i.name}`;
+    const isWatched = watchedSet.has(key(country, i.name));
+    const isSel     = addSelected.has(pairKey);
+    const qty       = i.quantity ?? 0;
+    const bCls      = qty > 100 ? 'b-high' : qty > 20 ? 'b-med' : qty > 0 ? 'b-low' : 'b-empty';
+    const bLbl      = qty > 100 ? 'HIGH'   : qty > 20 ? 'MED'   : qty > 0 ? 'LOW'   : 'EMPTY';
+    const profit    = profitOf(i);
+    const profitStr = profit === null ? '' : profit >= 0
+      ? `<span class="cat-profit-pos" style="font-size:12px">+$${profit.toLocaleString()}</span>`
+      : `<span class="cat-profit-neg" style="font-size:12px">-$${Math.abs(profit).toLocaleString()}</span>`;
+    const countryTag = addView === 'category'
+      ? `<span style="font-size:11px;color:var(--text-muted)">${flag(m(country))} ${country}</span>` : '';
+    const checkIcon = isWatched ? '✓' : isSel ? '✓' : '';
+    const onclick   = isWatched ? '' : `toggleAddItem('${pairKey.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')`;
+    return `<div class="m-item-row${isSel ? ' selected' : ''}${isWatched ? ' watching' : ''}"
+      onclick="${onclick}" style="cursor:${isWatched ? 'default' : 'pointer'}">
+      <div class="m-item-check">${checkIcon}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${i.name}</div>
+        ${countryTag}
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+        ${profitStr}
+        <span class="badge ${bCls}" style="font-size:10px">${bLbl}</span>
+        ${isWatched ? '<span style="font-size:11px;color:var(--text-muted)">Watching</span>' : ''}
+      </div>
+    </div>`;
+  }).join('');
 }
 
-// Keyboard nav
-document.getElementById('m-item').addEventListener('keydown', e => {
-  const dd    = document.getElementById('m-dropdown');
-  const items = dd.querySelectorAll('.ac-item');
-  if (dd.style.display === 'none' || !items.length) {
-    if (e.key === 'Backspace' && !e.target.value && selectedItems.size) {
-      const last = [...selectedItems].at(-1);
-      if (last) removeTag(last);
-    }
-    return;
+function toggleSelectAll() {
+  const watchedSet = new Set(watched.map(w => key(w.country, w.item)));
+  let rows = [];
+  if (addView === 'country') {
+    const country = catalogData?.countries?.find(c => c.name === addTab);
+    if (country) rows = country.items.map(i => ({ country: addTab, item: i }));
+  } else {
+    rows = _addCatMap.get(addTab) ?? [];
   }
-  if (e.key === 'ArrowDown') {
-    e.preventDefault();
-    acFocusIdx = Math.min(acFocusIdx + 1, items.length - 1);
-  } else if (e.key === 'ArrowUp') {
-    e.preventDefault();
-    acFocusIdx = Math.max(acFocusIdx - 1, 0);
-  } else if (e.key === 'Enter' && acFocusIdx >= 0) {
-    e.preventDefault();
-    items[acFocusIdx]?.dispatchEvent(new MouseEvent('mousedown'));
-    return;
-  } else if (e.key === 'Escape') {
-    closeDropdown(); return;
-  } else { return; }
-  items.forEach((el, i) => el.classList.toggle('focused', i === acFocusIdx));
-  items[acFocusIdx]?.scrollIntoView({ block: 'nearest' });
-});
+  const available  = rows.filter(({country, item: i}) => !watchedSet.has(key(country, i.name)));
+  const allSel     = available.every(({country, item: i}) => addSelected.has(`${country}|${i.name}`));
+  if (allSel) {
+    available.forEach(({country, item: i}) => addSelected.delete(`${country}|${i.name}`));
+  } else {
+    available.forEach(({country, item: i}) => addSelected.add(`${country}|${i.name}`));
+  }
+  renderAddTabs();
+  renderAddItems();
+  updateAddFooter();
+}
 
-document.getElementById('m-item').addEventListener('blur', () => {
-  setTimeout(closeDropdown, 150);
-});
+function toggleAddItem(pairKey) {
+  if (addSelected.has(pairKey)) addSelected.delete(pairKey);
+  else addSelected.add(pairKey);
+  renderAddTabs();
+  renderAddItems();
+  updateAddFooter();
+}
 
-document.getElementById('m-item').addEventListener('input', e => {
-  renderDropdown(e.target.value.trim());
-});
-
-function resetPreview() {
-  selectedItems.clear();
-  countriesMap.clear();
-  renderTags();
-  renderPreview();
+function updateAddFooter() {
+  const watchedSet = new Set(watched.map(w => key(w.country, w.item)));
+  const fresh = [...addSelected].filter(pk => {
+    const sep = pk.indexOf('|');
+    return !watchedSet.has(key(pk.slice(0, sep), pk.slice(sep + 1)));
+  });
+  const info = document.getElementById('m-sel-info');
+  const btn  = document.getElementById('m-submit');
+  if (!addSelected.size) {
+    info.textContent = 'Click items to add to watchlist';
+    btn.disabled = true; btn.textContent = 'Add';
+  } else {
+    info.textContent = `${fresh.length} item${fresh.length !== 1 ? 's' : ''} selected`;
+    btn.disabled = fresh.length === 0;
+    btn.textContent = fresh.length > 0 ? `Add ${fresh.length}` : 'Already watching';
+  }
 }
 
 async function submitAdd() {
-  const already = new Set(watched.map(w => key(w.country, w.item)));
-  const toAdd   = [];
-  for (const [itemName, entries] of countriesMap) {
-    if (!Array.isArray(entries)) continue;
-    for (const e of entries) {
-      if (!already.has(key(e.country, itemName))) toAdd.push({ country: e.country, item: itemName });
-    }
-  }
+  const watchedSet = new Set(watched.map(w => key(w.country, w.item)));
+  const toAdd = [...addSelected].map(pk => {
+    const sep = pk.indexOf('|');
+    return { country: pk.slice(0, sep), item: pk.slice(sep + 1) };
+  }).filter(p => !watchedSet.has(key(p.country, p.item)));
   if (!toAdd.length) return;
 
   const btn = document.getElementById('m-submit');
   btn.disabled = true; btn.textContent = 'Adding…';
-
-  for (const { country, item } of toAdd) {
-    try {
-      await fetch('/api/watched', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ country, item }),
-      });
-    } catch {}
+  try {
+    await Promise.all(toAdd.map(p =>
+      fetch('/api/watched', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(p) })
+    ));
+    closeModal();
+    await loadAll();
+  } catch(e) {
+    btn.disabled = false; btn.textContent = `Add ${toAdd.length}`;
+    alert('Failed: ' + e.message);
   }
-  closeModal();
-  await loadAll();
 }
 
 /* ── Remove ─────────────────────────────────────────── */
@@ -1971,9 +2017,8 @@ function buildCandidates() {
           default:       return ppm * survival * survival;
         }
       })();
-      const take       = Math.min(item.quantity, travelCapacity);
-      const potential  = profit * take;
-      const bring      = item.cost * take;
+      const potential  = profit * travelCapacity;
+      const bring      = item.cost * Math.min(item.quantity, travelCapacity);
       out.push({ item: item.name, country: country.name, travelMinutes: country.travelMinutes,
         qty: item.quantity, buy: item.cost, sell, profit, ppm, survival, score, potential, bring, isWatched, dep });
     }
@@ -2006,21 +2051,42 @@ function renderRecommend() {
   const list     = pool
     .filter(r => recFilter === 'watched' ? r.isWatched : true)
     .filter(r => !picksCatFilter || tornCategories[r.item] === picksCatFilter);
-  const top      = list.slice(0, 100);
   const lowChkWarn = filtered.length === 0 && all.length > 0;
+
+  // Sort
+  const pDir = picksSortDir === 'asc' ? 1 : -1;
+  const pickSorters = {
+    score:    (a, b) => (a.score    - b.score)    * pDir,
+    item:     (a, b) => a.item.localeCompare(b.item) * pDir,
+    country:  (a, b) => a.country.localeCompare(b.country) * pDir,
+    qty:      (a, b) => (a.qty      - b.qty)      * pDir,
+    buy:      (a, b) => (a.buy      - b.buy)      * pDir,
+    sell:     (a, b) => (a.sell     - b.sell)     * pDir,
+    ppm:      (a, b) => (a.ppm      - b.ppm)      * pDir,
+    chance:   (a, b) => (a.survival - b.survival) * pDir,
+    profit:   (a, b) => (a.profit   - b.profit)   * pDir,
+    bring:    (a, b) => (a.bring    - b.bring)     * pDir,
+    potential:(a, b) => (a.potential- b.potential) * pDir,
+  };
+  const sorted = [...list].sort(pickSorters[picksSortMode] ?? pickSorters.score);
+  const top    = sorted.slice(0, 100);
 
   if (!top.length) {
     body.innerHTML = '<div class="cat-empty">No profitable in-stock items found.</div>';
     stat.textContent = ''; return;
   }
 
+  const pInd = (col) => picksSortMode === col ? (picksSortDir === 'asc' ? ' ↑' : ' ↓') : '';
+  const pTh  = (col, label, cls = '') =>
+    `<th class="${cls}${picksSortMode === col ? ' cat-sorted' : ''}" style="cursor:pointer" onclick="setPicksSort('${col}')">${label}${pInd(col)}</th>`;
+
   const thead = `<thead><tr>
     <th style="padding-left:28px;width:40px">#</th>
-    <th>Item</th><th>Country</th>
-    <th class="num">Stock</th><th class="num">Buy</th><th class="num">Sell</th>
-    <th class="num cat-sorted">Score ↓</th><th class="num">Profit/min</th><th class="num">Chance</th>
-    <th class="num">Profit/unit</th><th class="num">Bring</th>
-    <th>Departure</th><th class="num">Potential</th><th></th>
+    ${pTh('item','Item')}${pTh('country','Country')}
+    ${pTh('qty','Stock','num')}${pTh('buy','Buy','num')}${pTh('sell','Sell','num')}
+    ${pTh('score','Score','num')}${pTh('ppm','Profit/min','num')}${pTh('chance','Chance','num')}
+    ${pTh('profit','Profit/unit','num')}${pTh('bring','Bring','num')}
+    <th>Departure</th>${pTh('potential','Potential','num')}<th></th>
   </tr></thead>`;
 
   const tbody = top.map(({ item, country, travelMinutes, qty, buy, sell, profit, ppm, survival, score, potential, bring, isWatched, dep }, idx) => {
@@ -2251,11 +2317,15 @@ let catSortDir     = 'desc';
 let travelCapacity   = 28;
 let sellCommission   = 5;
 let tornCategories    = {};       // { itemName: category }
+let sidebarSearch     = '';      // sidebar item search
+let sfCollapsed       = { country: false, category: false };
 let sidebarCatFilter  = null;    // sidebar category filter
 let catalogCatFilter  = null;    // catalog view category filter
 let picksCatFilter    = null;    // best picks category filter
 let pickModalCatFilter = new Set(); // multi-select for 🏆 pick card (empty = all)
-let pickPriority = 'balanced';      // balanced | time | profit | chance
+let pickPriority   = 'balanced';    // balanced | time | profit | chance
+let picksSortMode  = 'score';
+let picksSortDir   = 'desc';
 
 async function openCatalog() {
   document.getElementById('catalog-modal').classList.add('open');
@@ -2265,6 +2335,8 @@ async function openCatalog() {
   picksCatFilter   = null;
   catSortMode      = 'profit';
   catSortDir       = 'desc';
+  picksSortMode    = 'score';
+  picksSortDir     = 'desc';
   // Sync priority button active states
   document.querySelectorAll('.priority-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.p === pickPriority));
@@ -2382,8 +2454,14 @@ function filterCatalog() {
     buy:       numSort(r => r.item.cost ?? 0),
     sell:      numSort(r => tornPrices[r.item.name] ?? null),
     profit:    numSort(r => profitOf(r.item)),
-    potential:    numSort(r => { const p = profitOf(r.item); const q = r.item.quantity ?? 0; return p !== null && q > 0 ? p * Math.min(q, travelCapacity) : null; }),
+    potential:    numSort(r => { const p = profitOf(r.item); return p !== null ? p * travelCapacity : null; }),
     profitpermin: numSort(r => { const p = profitOf(r.item); return (p !== null && r.travelMinutes) ? p / r.travelMinutes : null; }),
+    cash:         numSort(r => r.item.cost ? r.item.cost * travelCapacity : null),
+    departure:    numSort(r => {
+      const dep = statusMap[key(r.country, r.item.name)]?.departure;
+      if (!dep?.ready) return null;
+      return dep.leaveAt ?? Infinity;
+    }),
   };
   allRows.sort(sorters[catSortMode] ?? sorters.profit);
 
@@ -2400,13 +2478,15 @@ function filterCatalog() {
       ${th('country','Country')}
       ${th('stock','Stock','num')}
       ${th('buy','Buy','num')}
-      ${hasPrices ? th('sell','Sell','num') + th('profit','Profit/unit','num') + th('profitpermin','Profit/min','num') + th('potential','Potential','num') : ''}
+      ${hasPrices ? th('sell','Sell','num') + th('profit','Profit/unit','num') + th('profitpermin','Profit/min','num') + th('potential','Potential','num') + th('cash','Cash needed','num') : ''}
+      ${th('departure','Departure')}
       <th></th>
     </tr></thead>`;
 
     const tbodyRows = allRows.map(({ country, travelMinutes, item: i }) => {
       const mt = m(country);
       const isWatched = watchedSet.has(`${country}\x00${i.name.toLowerCase()}`);
+      const dep = isWatched ? statusMap[key(country, i.name)]?.departure : null;
       const qty = i.quantity ?? 0;
       const badgeCls = qty > 100 ? 'b-high' : qty > 20 ? 'b-med' : qty > 0 ? 'b-low' : 'b-empty';
       const badgeLbl = qty > 100 ? 'HIGH' : qty > 20 ? 'MED' : qty > 0 ? 'LOW' : 'EMPTY';
@@ -2421,21 +2501,35 @@ function filterCatalog() {
         if (profit === null) { profitStr = '—'; profitCls = 'cat-profit-na'; }
         else if (profit >= 0) { profitStr = `+$${profit.toLocaleString()}`; profitCls = 'cat-profit-pos'; }
         else { profitStr = `-$${Math.abs(profit).toLocaleString()}`; profitCls = 'cat-profit-neg'; }
-        const potential   = profit !== null && qty > 0 ? profit * Math.min(qty, travelCapacity) : null;
+        const potential   = profit !== null ? profit * travelCapacity : null;
         const potStr      = potential === null ? '—' : potential >= 0 ? `+$${potential.toLocaleString()}` : `-$${Math.abs(potential).toLocaleString()}`;
         const potCls      = potential === null ? 'cat-profit-na' : potential >= 0 ? 'cat-profit-pos' : 'cat-profit-neg';
         const ppm         = (profit !== null && travelMinutes) ? profit / travelMinutes : null;
         const ppmVal      = ppm === null ? '—' : (ppm >= 0 ? `+$${ppm.toFixed(0)}/min` : `-$${Math.abs(ppm).toFixed(0)}/min`);
         const ppmCls      = ppm === null ? 'cat-profit-na' : ppm >= 0 ? 'cat-profit-pos' : 'cat-profit-neg';
+        const cashAmt = i.cost ? i.cost * travelCapacity : null;
+        const cashStr = cashAmt === null ? '—' : `$${cashAmt.toLocaleString()}`;
         priceCols = `<td class="num cat-sell">${sellStr}</td>
           <td class="num ${profitCls}">${profitStr}</td>
           <td class="num ${ppmCls}" style="font-size:12px">${ppmVal}</td>
-          <td class="num ${potCls}" style="font-size:11px">${potStr}</td>`;
+          <td class="num ${potCls}" style="font-size:11px">${potStr}</td>
+          <td class="num" style="color:var(--yellow);font-weight:700;font-size:12px">${cashStr}</td>`;
       }
 
       const watchBtn = isWatched
         ? `<button class="btn-watch watching" disabled>Watching</button>`
         : `<button class="btn-watch" onclick="catalogWatch('${country.replace(/'/g,"\\'")}','${i.name.replace(/'/g,"\\'")}',this)">Watch</button>`;
+
+      let depCell;
+      if (dep?.ready) {
+        const cls = dep.recommendation?.toLowerCase().includes('now') ? 'cat-profit-pos' : 'dep-soon';
+        depCell = `<div class="${cls}" style="font-weight:700;font-size:12px">${dep.recommendation}</div>`
+          + (dep.leaveAt ? `<div style="font-size:11px;color:var(--text-muted)">${fmtTime(dep.leaveAt)}</div>` : '');
+      } else if (isWatched) {
+        depCell = `<span style="color:var(--text-muted);font-size:11px">Collecting…</span>`;
+      } else {
+        depCell = `<span style="color:var(--text-muted)">—</span>`;
+      }
 
       return `<tr>
         <td><span class="cat-item-name">${i.name}</span></td>
@@ -2443,6 +2537,7 @@ function filterCatalog() {
         <td class="num"><span class="badge ${badgeCls}">${badgeLbl}</span></td>
         <td class="num cat-buy">${buy}</td>
         ${priceCols}
+        <td style="font-size:12px">${depCell}</td>
         <td>${watchBtn}</td>
       </tr>`;
     }).join('');
@@ -2470,6 +2565,16 @@ function setCatSort(mode) {
   filterCatalog();
 }
 
+function setPicksSort(mode) {
+  if (picksSortMode === mode) {
+    picksSortDir = picksSortDir === 'desc' ? 'asc' : 'desc';
+  } else {
+    picksSortMode = mode;
+    picksSortDir = mode === 'item' || mode === 'country' ? 'asc' : 'desc';
+  }
+  renderRecommend();
+}
+
 async function catalogWatch(country, item, btn) {
   btn.disabled = true; btn.textContent = '…';
   try {
@@ -2484,6 +2589,214 @@ async function catalogWatch(country, item, btn) {
   } catch(e) {
     btn.disabled = false; btn.textContent = 'Watch';
   }
+}
+
+/* ── TRAVEL PLANNER ─────────────────────────────────────── */
+let plannerPriority = 'balanced';
+
+async function openPlanner() {
+  document.getElementById('planner-modal').classList.add('open');
+  document.querySelectorAll('.planner-prio-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.p === plannerPriority));
+
+  const fetches = [];
+  if (!catalogData?.countries)
+    fetches.push(fetch('/api/catalog').then(r => r.json()).then(d => { catalogData = d; }).catch(() => {}));
+  if (!Object.keys(tornPrices).length)
+    fetches.push(fetch('/api/torn-prices').then(r => r.json()).then(d => { tornPrices = d; }).catch(() => {}));
+  if (!Object.keys(tornCategories).length)
+    fetches.push(fetch('/api/torn-categories').then(r => r.json()).then(d => { tornCategories = d; }).catch(() => {}));
+
+  if (fetches.length) {
+    document.getElementById('planner-results').innerHTML =
+      '<div style="text-align:center;color:var(--text-muted);padding:60px">Loading data…</div>';
+    await Promise.all(fetches);
+    document.getElementById('planner-results').innerHTML =
+      '<div style="text-align:center;color:var(--text-muted);padding:60px">Configure your trip above and click <strong>Plan My Day</strong>.</div>';
+  }
+}
+
+function closePlanner() {
+  document.getElementById('planner-modal').classList.remove('open');
+}
+
+function setPlannerPriority(p) {
+  plannerPriority = p;
+  // Temporarily override pickPriority so buildCandidates() scores correctly
+  pickPriority = p;
+  document.querySelectorAll('.planner-prio-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.p === p));
+}
+
+function runPlanner() {
+  const startCash   = parseFloat(document.getElementById('planner-cash').value)    || 0;
+  const hours       = parseFloat(document.getElementById('planner-hours').value)   || 16;
+  const filterMode  = document.getElementById('planner-filter').value;
+  const minSurvival = parseFloat(document.getElementById('planner-survival').value) || 0.25;
+  const resultsEl   = document.getElementById('planner-results');
+
+  if (!Object.keys(tornPrices).length) {
+    resultsEl.innerHTML = '<div style="text-align:center;color:var(--red);padding:60px">Add your Torn API key in ⚙ Settings to enable recommendations.</div>';
+    return;
+  }
+
+  // Sync pickPriority before building candidates
+  pickPriority = plannerPriority;
+
+  const candidates = buildCandidates()
+    .filter(c => filterMode === 'watched' ? c.isWatched : true)
+    .filter(c => c.survival >= minSurvival);
+
+  if (!candidates.length) {
+    resultsEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:60px">No profitable items found with current filters. Try lowering Min Survival or switching to All items.</div>';
+    return;
+  }
+
+  const trips       = [];
+  let usedMinutes   = 0;
+  let cash          = startCash;
+  const totalMinutes = hours * 60;
+  const nowSecs     = Math.floor(Date.now() / 1000);
+
+  while (usedMinutes < totalMinutes) {
+    const remaining = totalMinutes - usedMinutes;
+    let best = null;
+    let bestValue = -Infinity;
+
+    for (const c of candidates) {
+      const roundTrip = c.travelMinutes * 2;
+      if (roundTrip > remaining) continue;
+      if (!c.buy || c.buy <= 0) continue;
+
+      const maxByBudget = cash > 0 ? Math.floor(cash / c.buy) : travelCapacity;
+      const units = Math.min(c.qty, travelCapacity, maxByBudget);
+      if (units <= 0) continue;
+
+      const grossProfit    = units * c.profit;
+      const expectedProfit = grossProfit * c.survival;
+      const valuePerMin    = expectedProfit / roundTrip;
+
+      if (valuePerMin > bestValue) {
+        bestValue = valuePerMin;
+        best = { ...c, units, grossProfit, expectedProfit, cashNeeded: units * c.buy, roundTrip };
+      }
+    }
+
+    if (!best) break;
+
+    trips.push({
+      ...best,
+      leaveSecs:  nowSecs + usedMinutes * 60,
+      returnSecs: nowSecs + (usedMinutes + best.roundTrip) * 60,
+      cashBefore: cash,
+      cashAfter:  cash + best.expectedProfit,
+    });
+
+    usedMinutes += best.roundTrip;
+    cash        += best.expectedProfit;
+  }
+
+  _renderPlannerResults(trips, startCash, hours, usedMinutes, totalMinutes);
+}
+
+function _renderPlannerResults(trips, startCash, hours, usedMinutes, totalMinutes) {
+  const el = document.getElementById('planner-results');
+
+  if (!trips.length) {
+    el.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:60px">No trips could fit in the time window. Try more hours or a lower Min Survival.</div>';
+    return;
+  }
+
+  const totalExpected = trips.reduce((s, t) => s + t.expectedProfit, 0);
+  const totalGross    = trips.reduce((s, t) => s + t.grossProfit,    0);
+  const fmtMoney = v => `$${Math.round(v).toLocaleString()}`;
+  const fmtDur   = mins => {
+    const h = Math.floor(mins / 60), m = mins % 60;
+    return h > 0 ? `${h}h ${m > 0 ? m + 'm' : ''}`.trim() : `${m}m`;
+  };
+
+  const summary = `
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:20px 28px;margin-bottom:20px;display:flex;gap:36px;flex-wrap:wrap;align-items:center">
+      <div>
+        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px">Trips</div>
+        <div style="font-size:28px;font-weight:800;color:var(--accent)">${trips.length}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px">Time Used</div>
+        <div style="font-size:28px;font-weight:800">${fmtDur(usedMinutes)}<span style="font-size:13px;color:var(--text-muted);margin-left:6px">of ${hours}h</span></div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px">Expected Profit</div>
+        <div style="font-size:28px;font-weight:800;color:var(--green)">${fmtMoney(totalExpected)}</div>
+        <div style="font-size:11px;color:var(--text-muted)">best case ${fmtMoney(totalGross)}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px">Starting Cash</div>
+        <div style="font-size:28px;font-weight:800;color:var(--yellow)">${fmtMoney(startCash)}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px">Ending Cash</div>
+        <div style="font-size:28px;font-weight:800;color:var(--yellow)">${fmtMoney(trips[trips.length - 1].cashAfter)}</div>
+      </div>
+    </div>`;
+
+  const cards = trips.map((t, i) => {
+    const mt       = m(t.country);
+    const pct      = Math.round(t.survival * 100);
+    const chanceCls = pct >= 75 ? 'cat-profit-pos' : pct >= 50 ? 'dep-soon' : 'cat-profit-neg';
+    const bCls     = t.qty > 100 ? 'b-high' : t.qty > 20 ? 'b-med' : 'b-low';
+    const bLbl     = t.qty > 100 ? 'HIGH' : t.qty > 20 ? 'MED' : 'LOW';
+    const cat      = tornCategories[t.item] ?? '';
+    const profitColor = t.profit >= 0 ? 'var(--green)' : 'var(--red)';
+
+    return `
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:8px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        <div style="width:34px;height:34px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0;color:#fff">${i + 1}</div>
+
+        <div style="flex:1.5;min-width:150px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+            ${flag(mt)}
+            <span style="font-weight:700">${t.country}</span>
+            <span style="font-size:11px;color:var(--text-muted)">${t.travelMinutes}min away</span>
+          </div>
+          <div style="font-weight:600;font-size:13px">${t.item}</div>
+          ${cat ? `<div style="font-size:11px;color:var(--text-muted)">${cat}</div>` : ''}
+        </div>
+
+        <div style="text-align:center;min-width:70px">
+          <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">BUY</div>
+          <div style="font-weight:700;font-size:15px">${t.units.toLocaleString()}<span style="font-size:11px;font-weight:400;color:var(--text-muted)"> units</span></div>
+          <span class="badge ${bCls}" style="font-size:10px">${bLbl} stock</span>
+        </div>
+
+        <div style="text-align:center;min-width:110px">
+          <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">CASH NEEDED</div>
+          <div style="font-weight:700;color:var(--yellow)">${fmtMoney(t.cashNeeded)}</div>
+          <div style="font-size:11px;color:var(--text-muted)">have ${fmtMoney(t.cashBefore)}</div>
+        </div>
+
+        <div style="text-align:center;min-width:130px">
+          <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">EXPECTED PROFIT</div>
+          <div style="font-weight:700;font-size:15px;color:${profitColor}">+${fmtMoney(t.expectedProfit)}</div>
+          <div style="font-size:11px;color:var(--text-muted)">best +${fmtMoney(t.grossProfit)}</div>
+        </div>
+
+        <div style="text-align:center;min-width:60px">
+          <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">CHANCE</div>
+          <div style="font-weight:700;font-size:16px" class="${chanceCls}">${pct}%</div>
+        </div>
+
+        <div style="text-align:center;min-width:110px">
+          <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">SCHEDULE</div>
+          <div style="font-size:12px;font-weight:600">✈ Depart ${fmtTime(t.leaveSecs)}</div>
+          <div style="font-size:12px;color:var(--text-muted)">↩ Return ${fmtTime(t.returnSecs)}</div>
+        </div>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = summary + `<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">
+    ${trips.length} trip${trips.length !== 1 ? 's' : ''} · ${fmtDur(usedMinutes)} travel · times shown in ${tzMode === 'utc' ? 'TCT' : 'local time'}
+  </div>` + cards;
 }
 
 loadAll();

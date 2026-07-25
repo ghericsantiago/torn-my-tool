@@ -275,9 +275,10 @@
               el.style.display = "none";
               el.textContent = "";
             } else {
-              const m = Math.floor(sec / 60);
+              const h = Math.floor(sec / 3600);
+              const m = Math.floor((sec % 3600) / 60);
               const s = sec % 60;
-              el.textContent = `Traveling: ${m}m ${s}s`;
+              el.textContent = `Traveling: ${h > 0 ? h + "h " : ""}${m}m ${s}s`;
               el.style.display = "inline";
             }
           };
