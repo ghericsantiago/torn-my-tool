@@ -43,11 +43,11 @@
   function loadOptions() {
     try {
       return Object.assign(
-        { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5, gymEnabled: false, gymStat: "strength" },
+        { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5, gymEnabled: false, gymStat: "strength", holdIfNerveFull: false },
         JSON.parse(localStorage.getItem(OPTS_KEY) || "{}")
       );
     } catch (e) {
-      return { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5, gymEnabled: false, gymStat: "strength" };
+      return { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5, gymEnabled: false, gymStat: "strength", holdIfNerveFull: false };
     }
   }
   function saveOptions(o) {
@@ -610,6 +610,12 @@
     return { current: Number(e.current || 0), maximum: Number(e.maximum || 0), isFull: Number(e.current) >= Number(e.maximum) && Number(e.maximum) > 0 };
   }
 
+  async function getNerveStatus() {
+    const data = await apiRequest("user", "bars");
+    const n = data.nerve || {};
+    return { current: Number(n.current || 0), maximum: Number(n.maximum || 0), isFull: Number(n.current) >= Number(n.maximum) && Number(n.maximum) > 0 };
+  }
+
   async function processGymTraining() {
     options = loadOptions();
     const stat = (options.gymStat || "strength").toLowerCase();
@@ -764,6 +770,18 @@
     // Gym takes priority over flights — go train if energy is full
     const wentToGym = await checkAndGoToGym();
     if (wentToGym) return;
+
+    // Hold if nerve is full
+    if (options.holdIfNerveFull) {
+      let nerve;
+      try { nerve = await getNerveStatus(); }
+      catch (e) { console.warn("[AutoFly2] Nerve check failed", e); }
+      if (nerve && nerve.isFull) {
+        setPanelStatus(`Nerve full (${nerve.current}/${nerve.maximum}) — holding flight`, "#ff6b6b");
+        console.log(`[AutoFly2] Nerve full (${nerve.current}/${nerve.maximum}) — holding flight`);
+        return;
+      }
+    }
 
     // Find the next flight ready to depart
     const nextFlight = getNextReadyFlight();
@@ -1018,22 +1036,31 @@
           <div style="color:#555;font-size:10px;margin-top:4px;">Time is optional (TCT/UTC). ASAP = no time set, flies when ready. ● = ready. ✈ = flying. ✓ = done. &#x21bb; = loop.</div>
         </details>
 
-        <!-- Gym -->
+        <!-- Automation -->
         <details id="tm-af2-gym-toggle" style="flex:1 1 100%;border-top:1px solid #333;padding-top:6px;">
-          <summary style="cursor:pointer;color:#aaa;font-size:12px;user-select:none;list-style:none;font-weight:bold;">Auto-Gym &#x1F3CB;</summary>
-          <div style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Automatically go to gym and train when energy is full (priority over flights)">
-              <input id="tm-af2-gym-enabled" type="checkbox"> Enable (trains before flying when full)
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;user-select:none;">
-              Stat:
-              <select id="tm-af2-gym-stat" style="padding:2px 6px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;">
-                <option value="strength">Strength</option>
-                <option value="defense">Defense</option>
-                <option value="speed">Speed</option>
-                <option value="dexterity">Dexterity</option>
-              </select>
-            </label>
+          <summary style="cursor:pointer;color:#aaa;font-size:12px;user-select:none;list-style:none;font-weight:bold;">Automation &#x2699;&#xFE0F;</summary>
+          <div style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;">
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              <span style="color:#666;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;">Gym</span>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Automatically go to gym and train when energy is full, before flying">
+                <input id="tm-af2-gym-enabled" type="checkbox"> Auto-Gym &#x1F3CB; (trains before flying when energy is full)
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;user-select:none;">
+                Stat:
+                <select id="tm-af2-gym-stat" style="padding:2px 6px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;">
+                  <option value="strength">Strength</option>
+                  <option value="defense">Defense</option>
+                  <option value="speed">Speed</option>
+                  <option value="dexterity">Dexterity</option>
+                </select>
+              </label>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px;border-left:1px solid #333;padding-left:12px;">
+              <span style="color:#666;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;">Nerve</span>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Hold the next flight if your nerve bar is full — waits until nerve is spent before departing">
+                <input id="tm-af2-hold-nerve" type="checkbox"> Hold flight if nerve full &#x26A1;
+              </label>
+            </div>
           </div>
         </details>
 
@@ -1106,6 +1133,13 @@
       gymStatEl.value = options.gymStat || "strength";
       gymStatEl.addEventListener("change", () => {
         options.gymStat = gymStatEl.value; saveOptions(options);
+      });
+    }
+    const holdNerveEl = document.getElementById("tm-af2-hold-nerve");
+    if (holdNerveEl) {
+      holdNerveEl.checked = !!options.holdIfNerveFull;
+      holdNerveEl.addEventListener("change", () => {
+        options.holdIfNerveFull = !!holdNerveEl.checked; saveOptions(options);
       });
     }
 

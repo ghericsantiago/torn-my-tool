@@ -669,21 +669,23 @@ tbody tr { border-left: 3px solid var(--rc); }
       <div class="item-header">
         <h1 class="item-title" id="item-title"></h1>
         <p class="item-subtitle" id="item-subtitle"></p>
-        <div class="mode-toggle">
-          <button class="mode-btn" id="btn-12h"  onclick="setHours(12)">12h</button>
-          <button class="mode-btn active" id="btn-24h" onclick="setHours(24)">24h</button>
-          <button class="mode-btn" id="btn-36h"  onclick="setHours(36)">36h</button>
-          <button class="mode-btn" id="btn-48h"  onclick="setHours(48)">48h</button>
-        </div>
-        <div class="mode-toggle">
-          <button class="mode-btn active" id="btn-stock"  onclick="setMode('stock')">Stock</button>
-          <button class="mode-btn"        id="btn-profit" onclick="setMode('profit')">Profit/Unit</button>
+        <div id="chart-controls" style="margin-left:auto;display:flex;gap:8px">
+          <div class="mode-toggle" style="margin-left:0">
+            <button class="mode-btn" id="btn-12h"  onclick="setHours(12)">12h</button>
+            <button class="mode-btn active" id="btn-24h" onclick="setHours(24)">24h</button>
+            <button class="mode-btn" id="btn-36h"  onclick="setHours(36)">36h</button>
+            <button class="mode-btn" id="btn-48h"  onclick="setHours(48)">48h</button>
+          </div>
+          <div class="mode-toggle" style="margin-left:0">
+            <button class="mode-btn active" id="btn-stock"  onclick="setMode('stock')">Stock</button>
+            <button class="mode-btn"        id="btn-profit" onclick="setMode('profit')">Profit/Unit</button>
+          </div>
         </div>
       </div>
 
       <div id="country-cards"></div>
 
-      <div class="chart-panel">
+      <div class="chart-panel" id="chart-panel">
         <div class="chart-empty" id="chart-empty">Waiting for history data…</div>
         <div class="chart-canvas-wrap" id="chart-wrap" style="display:none">
           <canvas id="main-chart"></canvas>
@@ -698,6 +700,7 @@ tbody tr { border-left: 3px solid var(--rc); }
         <table>
           <thead>
             <tr>
+              <th id="th-item-col" style="display:none" onclick="sort('item')">Item<span id="si-item"></span></th>
               <th onclick="sort('country')">Country<span id="si-country"></span></th>
               <th onclick="sort('status')">Status<span id="si-status"></span></th>
               <th onclick="sort('qty')">Stock<span id="si-qty"></span></th>
@@ -706,6 +709,7 @@ tbody tr { border-left: 3px solid var(--rc); }
               <th onclick="sort('ppm')">Profit/min<span id="si-ppm"></span></th>
               <th onclick="sort('potential')">Potential<span id="si-potential"></span></th>
               <th onclick="sort('cash')">Cash needed<span id="si-cash"></span></th>
+              <th onclick="sort('chance')">Chance<span id="si-chance"></span></th>
               <th onclick="sort('restock')">Next Restock<span id="si-restock"></span></th>
               <th onclick="sort('dep')">Departure<span id="si-dep"></span></th>
               <th onclick="sort('conf')">Confidence<span id="si-conf"></span></th>
@@ -1098,7 +1102,14 @@ function renderSidebar() {
     return;
   }
 
-  list.innerHTML = items.map(item => {
+  const allRow = `<div class="sidebar-group">
+    <div class="sidebar-group-header${!activeItem ? ' active' : ''}" onclick="clearItemFilter()" style="border-bottom:1px solid var(--border);margin-bottom:4px">
+      <span class="sg-name${!activeItem ? ' active' : ''}" style="color:var(--text-dim)">All Items</span>
+      <span class="sg-count">${watched.length}</span>
+    </div>
+  </div>`;
+
+  list.innerHTML = allRow + items.map(item => {
     const cs       = countriesFor(item);
     const isActive = item === activeItem;
     return `<div class="sidebar-group">
@@ -1147,20 +1158,34 @@ function renderCatPills(elId, activeVal, setter, itemsIterable) {
   el.innerHTML = all + pills;
 }
 
-function selectItem(item) {
-  activeItem = item;
-  activeSet  = new Set(countriesFor(item));
+function clearItemFilter() {
+  activeItem = null;
   renderSidebar();
   renderView();
-  fetchHistory();
+}
+
+function selectItem(item) {
+  if (activeItem === item) {
+    activeItem = null;
+  } else {
+    activeItem = item;
+    activeSet  = new Set(countriesFor(item));
+  }
+  renderSidebar();
+  renderView();
+  if (activeItem) fetchHistory();
 }
 
 /* ── View ───────────────────────────────────────────── */
 function renderView() {
   const ev = document.getElementById('empty-state');
   const iv = document.getElementById('item-view');
+  const chartCtrl = document.getElementById('chart-controls');
+  const chartPnl  = document.getElementById('chart-panel');
+  const cards     = document.getElementById('country-cards');
+  const thItem    = document.getElementById('th-item-col');
 
-  if (!activeItem) {
+  if (!watched.length) {
     ev.style.display = 'flex';
     iv.style.display = 'none';
     return;
@@ -1168,6 +1193,25 @@ function renderView() {
 
   ev.style.display = 'none';
   iv.style.display = 'block';
+
+  if (!activeItem) {
+    // All-items overview mode
+    chartCtrl.style.display = 'none';
+    chartPnl.style.display  = 'none';
+    cards.style.display     = 'none';
+    thItem.style.display    = '';
+    document.getElementById('item-title').textContent   = 'ALL ITEMS — OVERVIEW';
+    document.getElementById('item-subtitle').textContent =
+      `${watched.length} entries · click an item in the sidebar to filter`;
+    renderAllTable();
+    return;
+  }
+
+  // Single-item mode
+  chartCtrl.style.display = '';
+  chartPnl.style.display  = '';
+  cards.style.display     = '';
+  thItem.style.display    = 'none';
 
   const cs     = countriesFor(activeItem);
   const active = cs.filter(c => activeSet.has(c)).length;
@@ -1372,7 +1416,7 @@ function setTimeFmt(fmt) {
   timeFmt = fmt;
   document.getElementById('btn-24h-fmt').classList.toggle('active', fmt === '24');
   document.getElementById('btn-12h-fmt').classList.toggle('active', fmt === '12');
-  if (activeItem) renderTable(countriesFor(activeItem));
+  if (activeItem) renderTable(countriesFor(activeItem)); else renderAllTable();
   rebuildChart();
 }
 
@@ -1380,13 +1424,12 @@ function setTz(tz) {
   tzMode = tz;
   document.getElementById('btn-tct').classList.toggle('active',   tz === 'utc');
   document.getElementById('btn-local').classList.toggle('active', tz === 'local');
-  // Re-render table times and rebuild chart ticks
-  if (activeItem) renderTable(countriesFor(activeItem));
+  if (activeItem) renderTable(countriesFor(activeItem)); else renderAllTable();
   rebuildChart();
 }
 
 /* ── Table ──────────────────────────────────────────── */
-const SORT_IDS = ['country','status','qty','cost','profit','ppm','potential','cash','restock','dep','conf'];
+const SORT_IDS = ['item','country','status','qty','cost','profit','ppm','potential','cash','chance','restock','dep','conf'];
 
 function sort(col) {
   if (sortKey === col) sortDir *= -1;
@@ -1399,12 +1442,15 @@ function sort(col) {
   if (sortEl) sortEl.textContent = sortDir === 1 ? ' ▲' : ' ▼';
   // Update header class
   document.querySelectorAll('thead th').forEach(th => th.classList.remove('sorted-col'));
-  renderTable(countriesFor(activeItem));
+  if (activeItem) renderTable(countriesFor(activeItem));
+  else renderAllTable();
 }
 
 function sortVal(row, col) {
   const { c, snap, dep, stats, travelMinutes } = row;
+  const item = row.item ?? activeItem;
   switch (col) {
+    case 'item':    return item ?? '';
     case 'country': return c;
     case 'qty':     return snap?.quantity ?? -1;
     case 'cost':    return snap?.cost     ?? -1;
@@ -1412,20 +1458,25 @@ function sortVal(row, col) {
     case 'dep':     return dep?.leaveInSeconds ?? 999999;
     case 'restock': return dep?.predictedRestock ?? 9e9;
     case 'profit': {
-      const sell = tornPrices[activeItem] ?? 0;
+      const sell = tornPrices[item] ?? 0;
       return (sell && snap?.cost) ? sell * (1 - sellCommission / 100) - snap.cost : -Infinity;
     }
     case 'ppm': {
-      const sell = tornPrices[activeItem] ?? 0;
+      const sell = tornPrices[item] ?? 0;
       const pr   = (sell && snap?.cost) ? sell * (1 - sellCommission / 100) - snap.cost : null;
       return (pr !== null && travelMinutes) ? pr / travelMinutes : -Infinity;
     }
     case 'potential': {
-      const sell = tornPrices[activeItem] ?? 0;
+      const sell = tornPrices[item] ?? 0;
       return (sell && snap?.cost) ? (sell * (1 - sellCommission / 100) - snap.cost) * travelCapacity : -Infinity;
     }
     case 'cash': {
       return snap?.cost ? snap.cost * travelCapacity : -Infinity;
+    }
+    case 'chance': {
+      const q = snap?.quantity ?? 0;
+      if ((!q && !dep?.ready) || !travelMinutes) return -Infinity;
+      return stockSurvival(q, travelMinutes, stats, dep);
     }
     case 'status': {
       if (!snap || snap.quantity === 0) return -1;
@@ -1456,7 +1507,7 @@ function renderTable(cs) {
   });
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr class="no-rows"><td colspan="13">No countries watched for this item.</td></tr>';
+    tbody.innerHTML = '<tr class="no-rows"><td colspan="14">No countries watched for this item.</td></tr>';
     return;
   }
 
@@ -1493,7 +1544,7 @@ function renderTable(cs) {
                : `<span class="cat-profit-neg">-$${Math.abs(v).toLocaleString()}</span>`;
 
     const depContent = dep?.ready
-      ? `${dt}${dep.leaveAt ? `<br><span style="font-size:11px;opacity:0.7">${fmtTime(dep.leaveAt)}</span>` : ''}`
+      ? `${dt}${dep.leaveAt ? `<br><span style="font-size:11px;opacity:0.7" title="Depart ${fmtTime(dep.leaveAt)} + ${travelMinutes} min travel = Land ${fmtTime(dep.leaveAt + travelMinutes * 60)}">↗ ${fmtTime(dep.leaveAt)}${travelMinutes ? ` · ↙ ${fmtTime(dep.leaveAt + travelMinutes * 60)}` : ''}</span>` : ''}`
       : `<span style="font-size:11px">${dt}</span>`;
 
     return `<tr style="--rc:${mt.color}">
@@ -1510,10 +1561,11 @@ function renderTable(cs) {
       <td style="font-size:12px">${ppmAmt === null ? '<span style="color:var(--text-muted)">—</span>' : `<span class="${ppmAmt >= 0 ? 'cat-profit-pos' : 'cat-profit-neg'}">${ppmAmt >= 0 ? '+' : ''}$${ppmAmt.toFixed(0)}/min</span>`}</td>
       <td style="font-size:12px">${fmtProfit(potAmt)}</td>
       <td style="font-size:12px">${cashAmt === null ? '<span style="color:var(--text-muted)">—</span>' : `<span style="color:var(--yellow);font-weight:700">$${cashAmt.toLocaleString()}</span>`}</td>
+      <td>${(() => { const q = snap?.quantity ?? 0; if ((!q && !dep?.ready) || !travelMinutes) return '<span style="color:var(--text-muted)">—</span>'; const sv = stockSurvival(q, travelMinutes, stats, dep); const p = Math.round(sv * 100); if (p <= 0) return '<span style="color:var(--text-muted)">—</span>'; const cl = p >= 75 ? 'cat-profit-pos' : p >= 50 ? 'dep-soon' : 'cat-profit-neg'; const reason = stockSurvivalReason(q, travelMinutes, stats, dep, sv); return `<span class="${cl}" style="font-weight:700;cursor:help" title="${reason}">${p}%</span>`; })()}</td>
       <td>${restockHtml}</td>
       <td class="${dc}">${depContent}</td>
       <td>
-        <div class="conf-wrap">
+        <div class="conf-wrap" title="${confTooltip(dep, stats)}" style="cursor:help">
           <div class="conf-bg"><div class="conf-fill" style="width:${cn}%"></div></div>
           <span class="conf-pct">${cn}%</span>
         </div>
@@ -1523,6 +1575,92 @@ function renderTable(cs) {
         ? `<button class="btn-rm" onclick="removeWatched(${wid},event)">Remove</button>`
         : ''
       }</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderAllTable() {
+  const tbody = document.getElementById('tbody');
+
+  let rows = watched.map(w => ({
+    item: w.item,
+    c:    w.country,
+    snap:  statusMap[key(w.country, w.item)]?.snapshot,
+    dep:   statusMap[key(w.country, w.item)]?.departure,
+    stats: statusMap[key(w.country, w.item)]?.stats,
+    ts:    statusMap[key(w.country, w.item)]?.ts,
+    wid:   w.id,
+    travelMinutes: w.travel_minutes ?? null,
+  }));
+
+  rows.sort((a, b) => {
+    const va = sortVal(a, sortKey);
+    const vb = sortVal(b, sortKey);
+    return (typeof va === 'string' ? va.localeCompare(vb) : va - vb) * sortDir;
+  });
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr class="no-rows"><td colspan="15">No items watched yet.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(({ item, c, snap, dep, stats, ts, wid, travelMinutes }) => {
+    const mt  = m(c);
+    const bg  = getBadge(snap, stats);
+    const dc  = depClass(dep);
+    const dt  = dep?.recommendation ?? 'Collecting data…';
+    const cn  = dep?.confidence ?? 0;
+
+    let restockHtml;
+    if (dep?.ready && dep.predictedRestock) {
+      const sigma = stats?.restockInterval?.stdDev ?? 0;
+      const rt    = dep.predictedRestock;
+      restockHtml = sigma > 60
+        ? `<div class="restock-main">~${fmtTime(rt)}</div><div class="restock-range">${fmtTime(rt - sigma)} – ${fmtTime(rt + sigma)}</div>`
+        : `<div class="restock-main">~${fmtTime(rt)}</div>`;
+    } else {
+      restockHtml = `<span style="color:var(--text-muted);font-size:11px">${dep?.recommendation ?? 'Collecting…'}</span>`;
+    }
+
+    const sell      = tornPrices[item] ?? 0;
+    const profit    = (sell && snap?.cost) ? sell * (1 - sellCommission / 100) - snap.cost : null;
+    const potAmt    = profit !== null ? profit * travelCapacity : null;
+    const ppmAmt    = (profit !== null && travelMinutes) ? profit / travelMinutes : null;
+    const cashAmt   = snap?.cost ? snap.cost * travelCapacity : null;
+    const fmtProfit = v => v === null ? '<span style="color:var(--text-muted)">—</span>'
+      : v >= 0 ? `<span class="cat-profit-pos">+$${v.toLocaleString()}</span>`
+               : `<span class="cat-profit-neg">-$${Math.abs(v).toLocaleString()}</span>`;
+
+    const depContent = dep?.ready
+      ? `${dt}${dep.leaveAt ? `<br><span style="font-size:11px;opacity:0.7" title="Depart ${fmtTime(dep.leaveAt)} + ${travelMinutes} min travel = Land ${fmtTime(dep.leaveAt + travelMinutes * 60)}">↗ ${fmtTime(dep.leaveAt)}${travelMinutes ? ` · ↙ ${fmtTime(dep.leaveAt + travelMinutes * 60)}` : ''}</span>` : ''}`
+      : `<span style="font-size:11px">${dt}</span>`;
+
+    return `<tr style="--rc:${mt.color}">
+      <td style="font-weight:600;cursor:pointer;color:var(--accent)" onclick="selectItem('${item.replace(/'/g, "\\'")}')" title="Filter to ${item}">${item}</td>
+      <td>
+        <div class="flag-cell">
+          <span class="flag">${flag(mt)}</span>
+          <span class="cname">${c}</span>
+        </div>
+      </td>
+      <td><span class="badge ${bg.cls}">${bg.l}</span></td>
+      <td>${fmtNum(snap?.quantity)}</td>
+      <td>${fmtCost(snap?.cost)}</td>
+      <td>${fmtProfit(profit)}</td>
+      <td style="font-size:12px">${ppmAmt === null ? '<span style="color:var(--text-muted)">—</span>' : `<span class="${ppmAmt >= 0 ? 'cat-profit-pos' : 'cat-profit-neg'}">${ppmAmt >= 0 ? '+' : ''}$${ppmAmt.toFixed(0)}/min</span>`}</td>
+      <td style="font-size:12px">${fmtProfit(potAmt)}</td>
+      <td style="font-size:12px">${cashAmt === null ? '<span style="color:var(--text-muted)">—</span>' : `<span style="color:var(--yellow);font-weight:700">$${cashAmt.toLocaleString()}</span>`}</td>
+      <td>${(() => { const q = snap?.quantity ?? 0; if ((!q && !dep?.ready) || !travelMinutes) return '<span style="color:var(--text-muted)">—</span>'; const sv = stockSurvival(q, travelMinutes, stats, dep); const p = Math.round(sv * 100); if (p <= 0) return '<span style="color:var(--text-muted)">—</span>'; const cl = p >= 75 ? 'cat-profit-pos' : p >= 50 ? 'dep-soon' : 'cat-profit-neg'; const reason = stockSurvivalReason(q, travelMinutes, stats, dep, sv); return `<span class="${cl}" style="font-weight:700;cursor:help" title="${reason}">${p}%</span>`; })()}</td>
+      <td>${restockHtml}</td>
+      <td class="${dc}">${depContent}</td>
+      <td>
+        <div class="conf-wrap" title="${confTooltip(dep, stats)}" style="cursor:help">
+          <div class="conf-bg"><div class="conf-fill" style="width:${cn}%"></div></div>
+          <span class="conf-pct">${cn}%</span>
+        </div>
+      </td>
+      <td class="upd-cell">${fmtAgo(ts)}</td>
+      <td>${wid != null ? `<button class="btn-rm" onclick="removeWatched(${wid},event)">Remove</button>` : ''}</td>
     </tr>`;
   }).join('');
 }
@@ -1555,7 +1693,7 @@ function connectWS() {
       };
     }
     renderSidebar();
-    if (activeItem) renderView();
+    renderView();
     const lu = document.getElementById('last-upd');
     if (lu) lu.textContent = `Updated ${fmtAgo(msg.serverTime)}`;
   });
@@ -1929,7 +2067,8 @@ async function loadAll() {
   }
 
   const all = allItems();
-  if (!activeItem || !all.includes(activeItem)) activeItem = all[0] ?? null;
+  // If a previously active item is no longer in the list, clear it
+  if (activeItem && !all.includes(activeItem)) activeItem = null;
 
   if (activeItem) {
     const cs     = countriesFor(activeItem);
@@ -1938,14 +2077,8 @@ async function loadAll() {
   }
 
   renderSidebar();
-
-  if (!all.length) {
-    document.getElementById('empty-state').style.display = 'flex';
-    document.getElementById('item-view').style.display   = 'none';
-  } else {
-    renderView();
-    fetchHistory();
-  }
+  renderView();
+  if (activeItem) fetchHistory();
 }
 
 // Set initial sort indicator
@@ -1967,20 +2100,43 @@ function setRecFilter(f) {
 }
 
 function stockSurvival(qty, travelMins, stats, dep) {
-  // Watched item with departure confidence → trust the prediction engine
+  const travelSecs = travelMins * 60;
+
+  // Method 1: Server computed departure window — predicted stock at arrival is known
+  if (dep?.ready && dep.probAvailable != null) {
+    const expectedQty = dep.expectedRemainingStock ?? 0;
+    // expectedRemainingStock=0 means departure is timed to arrive right at restock → treat as fresh
+    const fillFactor  = expectedQty > 0 ? Math.min(expectedQty / travelCapacity, 1.0) : 0.90;
+    return Math.min(dep.probAvailable * fillFactor + 0.02, 0.99);
+  }
+
+  // Method 1b: dep ready but server predates new fields — fall back to confidence × stock level
   if (dep?.ready && dep.confidence >= 0) {
-    const conf      = dep.confidence / 100;
-    const stockOk   = qty >= travelCapacity * 2 ? 1.0 : qty >= travelCapacity ? 0.75 : 0.4;
+    const conf    = dep.confidence / 100;
+    const stockOk = qty <= 0 ? 1.0 : qty >= travelCapacity * 2 ? 1.0 : qty >= travelCapacity ? 0.75 : 0.4;
     return Math.min(conf * stockOk + 0.05, 0.99);
   }
-  // Watched item with historical stats → use position in depletion cycle
+
+  // No stock and no prediction → unknown
+  if ((qty ?? 0) <= 0) return 0;
+
+  // Method 2: Use historical consumption rate to predict qty at landing
+  if (stats?.averageConsumptionRate > 0) {
+    const predictedQty = Math.max(0, qty - stats.averageConsumptionRate * travelSecs);
+    const fillFactor   = Math.min(predictedQty / travelCapacity, 1.0);
+    // Uncertainty grows with travel time (±12% per hour)
+    const uncertainty  = Math.min((travelMins / 60) * 0.12, 0.25);
+    return Math.max(Math.min(fillFactor - uncertainty + 0.05, 0.95), 0.02);
+  }
+
+  // Method 3: No consumption rate — use cycle position from avg starting qty
   if (stats?.averageStartingQuantity > 0) {
-    const cyclePos  = Math.min(qty / stats.averageStartingQuantity, 1.0); // 1 = fresh restock
-    const timeLoss  = (travelMins / 60) * 0.12; // lose ~12% survival per hour of travel
+    const cyclePos = Math.min(qty / stats.averageStartingQuantity, 1.0);
+    const timeLoss = (travelMins / 60) * 0.12;
     return Math.max(Math.min(cyclePos - timeLoss, 0.97), 0.03);
   }
-  // Unmonitored item — use stock-to-travelTime ratio as proxy
-  // Assume high-demand items sell ~3–8 units/min
+
+  // Method 4: No stats — heuristic stock/travel ratio
   const ratio = qty / travelMins;
   if (ratio > 10) return 0.92;
   if (ratio > 5)  return 0.82;
@@ -1988,6 +2144,97 @@ function stockSurvival(qty, travelMins, stats, dep) {
   if (ratio > 1)  return 0.50;
   if (ratio > 0.3) return 0.30;
   return 0.10;
+}
+
+function confTooltip(dep, stats) {
+  if (!dep?.ready) return 'Not enough data yet';
+  const lines = [];
+
+  // Interval consistency (stats.confidence = clamp(100*(1-stdDev/mean),10,99))
+  if (stats?.restockInterval) {
+    const mu    = stats.restockInterval.mean;
+    const sigma = stats.restockInterval.stdDev ?? 0;
+    const consistency = Math.round(Math.max(10, Math.min(99, 100 * (1 - sigma / (mu || 1)))));
+    const fmtDur = s => s >= 3600 ? `${(s/3600).toFixed(1)}h` : `${Math.round(s/60)}m`;
+    lines.push(`Interval consistency: ${consistency}%`);
+    lines.push(`  avg restock every ${fmtDur(mu)} ± ${fmtDur(sigma)} (${stats.cycleCount ?? '?'} cycles)`);
+  }
+
+  // Stock availability at arrival
+  if (dep.probAvailable != null) {
+    const probPct = Math.round(dep.probAvailable * 100);
+    const expQty  = dep.expectedRemainingStock ?? 0;
+    lines.push(`Stock availability: ${probPct}%`);
+    lines.push(`  predicted ${expQty > 0 ? expQty + ' units' : 'fresh restock'} when you land`);
+  }
+
+  // Final combined confidence
+  lines.push(`Combined confidence: ${dep.confidence}%`);
+  if (dep.probAvailable != null && stats?.restockInterval) {
+    const mu    = stats.restockInterval.mean;
+    const sigma = stats.restockInterval.stdDev ?? 0;
+    const consistency = Math.round(Math.max(10, Math.min(99, 100 * (1 - sigma / (mu || 1)))));
+    const probPct = Math.round(dep.probAvailable * 100);
+    lines.push(`  ≈ interval consistency × stock availability`);
+    lines.push(`  ≈ ${consistency}% × ${probPct}% = ${dep.confidence}%`);
+  }
+
+  return lines.join('\n');
+}
+
+function stockSurvivalReason(qty, travelMins, stats, dep, survival) {
+  const pct = Math.round(survival * 100);
+  const travelSecs = travelMins * 60;
+
+  if (dep?.ready && dep.probAvailable != null) {
+    const expectedQty = dep.expectedRemainingStock ?? 0;
+    const probPct     = Math.round(dep.probAvailable * 100);
+    const fillFactor  = expectedQty > 0 ? Math.min(expectedQty / travelCapacity, 1.0) : 0.90;
+    const fillPct     = Math.round(fillFactor * 100);
+    const stockNote   = expectedQty > 0
+      ? `Predicted stock at landing: ${expectedQty} units (need ${travelCapacity} → can fill ${fillPct}% of bag)`
+      : `Stock empty now — departure timed to arrive at restock (estimated full bag)`;
+    return `Method: predicted stock at landing\n`
+      + `${stockNote}\n`
+      + `Probability stock is still available: ${probPct}%\n`
+      + `Formula: ${probPct}% × ${fillPct}% fill + 2% base = ${pct}%`;
+  }
+
+  if (dep?.ready && dep.confidence >= 0) {
+    const stockOk  = qty <= 0 ? 1.0 : qty >= travelCapacity * 2 ? 1.0 : qty >= travelCapacity ? 0.75 : 0.4;
+    const stockLbl = qty <= 0 ? `empty — timed to restock` : qty >= travelCapacity * 2 ? `ample (≥${travelCapacity * 2})` : qty >= travelCapacity ? `sufficient (≥${travelCapacity})` : `low (<${travelCapacity})`;
+    return `Method: prediction confidence (legacy)\n`
+      + `Confidence: ${dep.confidence}% · Stock: ${stockLbl}\n`
+      + `Formula: ${dep.confidence}% × ${Math.round(stockOk * 100)}% + 5% = ${pct}%`;
+  }
+
+  if ((qty ?? 0) <= 0) return `No stock and no departure prediction`;
+
+  if (stats?.averageConsumptionRate > 0) {
+    const rate         = stats.averageConsumptionRate;
+    const depleted     = Math.round(rate * travelSecs);
+    const predictedQty = Math.max(0, qty - depleted);
+    const fillFactor   = Math.min(predictedQty / travelCapacity, 1.0);
+    const uncertainty  = Math.min((travelMins / 60) * 0.12, 0.25);
+    return `Method: depletion rate projection\n`
+      + `Consumption rate: ${rate.toFixed(3)} units/sec\n`
+      + `${qty} units − ${depleted} depleted over ${travelMins} min = ${predictedQty} units at landing\n`
+      + `Fill factor: ${Math.round(fillFactor * 100)}% − ${Math.round(uncertainty * 100)}% uncertainty + 5% = ${pct}%`;
+  }
+
+  if (stats?.averageStartingQuantity > 0) {
+    const avgQ     = Math.round(stats.averageStartingQuantity);
+    const cyclePos = Math.min(qty / avgQ, 1.0);
+    const timeLoss = (travelMins / 60) * 0.12;
+    return `Method: cycle position\n`
+      + `${qty} ÷ ${avgQ} avg restock qty = ${Math.round(cyclePos * 100)}% of cycle remaining\n`
+      + `Travel penalty: ${travelMins} min × 0.12/hr = −${Math.round(timeLoss * 100)}%\n`
+      + `= ${pct}%`;
+  }
+
+  const ratio = qty / travelMins;
+  return `Method: heuristic (no historical data)\n`
+    + `Stock/travel ratio: ${qty} ÷ ${travelMins} min = ${ratio.toFixed(1)} units/min → ${pct}%`;
 }
 
 function buildCandidates() {
@@ -2008,7 +2255,8 @@ function buildCandidates() {
       if (isWatched && !dep?.ready) continue;
 
       const ppm        = profit / country.travelMinutes;
-      const survival   = stockSurvival(item.quantity, country.travelMinutes, stats, dep);
+      const survival       = stockSurvival(item.quantity, country.travelMinutes, stats, dep);
+      const survivalReason = stockSurvivalReason(item.quantity, country.travelMinutes, stats, dep, survival);
       const score      = (() => {
         switch (pickPriority) {
           case 'time':   return (profit / (country.travelMinutes * country.travelMinutes)) * survival * survival;
@@ -2020,7 +2268,7 @@ function buildCandidates() {
       const potential  = profit * travelCapacity;
       const bring      = item.cost * Math.min(item.quantity, travelCapacity);
       out.push({ item: item.name, country: country.name, travelMinutes: country.travelMinutes,
-        qty: item.quantity, buy: item.cost, sell, profit, ppm, survival, score, potential, bring, isWatched, dep });
+        qty: item.quantity, buy: item.cost, sell, profit, ppm, survival, survivalReason, score, potential, bring, isWatched, dep });
     }
   }
   return out.sort((a, b) => b.score - a.score);
@@ -2089,7 +2337,7 @@ function renderRecommend() {
     <th>Departure</th>${pTh('potential','Potential','num')}<th></th>
   </tr></thead>`;
 
-  const tbody = top.map(({ item, country, travelMinutes, qty, buy, sell, profit, ppm, survival, score, potential, bring, isWatched, dep }, idx) => {
+  const tbody = top.map(({ item, country, travelMinutes, qty, buy, sell, profit, ppm, survival, survivalReason, score, potential, bring, isWatched, dep }, idx) => {
     const mt        = m(country);
     const rankCls   = idx === 0 ? 'gold' : idx === 1 ? 'silver' : idx === 2 ? 'bronze' : '';
     const bCls      = qty > 100 ? 'b-high' : qty > 20 ? 'b-med' : 'b-low';
@@ -2099,8 +2347,8 @@ function renderRecommend() {
     let depCell;
     if (dep?.ready) {
       const cls = dep.recommendation?.toLowerCase().includes('now') ? 'cat-profit-pos' : 'dep-soon';
-      depCell = `<div class="${cls}" style="font-weight:700;font-size:12px">${dep.recommendation}</div>
-        ${dep.leaveAt ? `<div style="font-size:11px;color:var(--text-muted)">${fmtTime(dep.leaveAt)}</div>` : ''}`;
+      depCell = `<div class="${cls}" style="font-weight:700;font-size:12px">${dep.recommendation}</div>`
+        + (dep.leaveAt ? `<div style="font-size:11px;color:var(--text-muted);cursor:help" title="Depart ${fmtTime(dep.leaveAt)} + ${travelMinutes} min travel = Land ${fmtTime(dep.leaveAt + travelMinutes * 60)}">↗ ${fmtTime(dep.leaveAt)} · ↙ ${fmtTime(dep.leaveAt + travelMinutes * 60)}</div>` : '');
     } else if (isWatched) {
       depCell = `<span style="color:var(--text-muted);font-size:11px">Collecting data…</span>`;
     } else {
@@ -2118,7 +2366,7 @@ function renderRecommend() {
       <td class="num cat-sell">$${sell.toLocaleString()}</td>
       <td class="num cat-profit-pos" style="font-size:11px">+$${score.toFixed(0)}/min</td>
       <td class="num cat-profit-pos">+$${ppm.toFixed(0)}/min</td>
-      <td class="num"><span class="${chanceCls}" style="font-weight:700">${pct}%</span></td>
+      <td class="num"><span class="${chanceCls}" style="font-weight:700;cursor:help" title="${survivalReason}">${pct}%</span></td>
       <td class="num cat-profit-pos">+$${profit.toLocaleString()}</td>
       <td class="num" style="color:var(--yellow);font-weight:700">$${bring.toLocaleString()}</td>
       <td>${depCell}</td>
@@ -2240,15 +2488,15 @@ function renderPick() {
   let depHtml;
   if (best.dep?.ready) {
     const cls = best.dep.recommendation?.toLowerCase().includes('now') ? 'cat-profit-pos' : 'dep-soon';
-    depHtml = `<div class="${cls}" style="font-weight:800;font-size:15px">${best.dep.recommendation}</div>
-      ${best.dep.leaveAt ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${fmtTime(best.dep.leaveAt)}</div>` : ''}`;
+    depHtml = `<div class="${cls}" style="font-weight:800;font-size:15px">${best.dep.recommendation}</div>`
+      + (best.dep.leaveAt ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px;cursor:help" title="Depart ${fmtTime(best.dep.leaveAt)} + ${best.travelMinutes} min travel = Land ${fmtTime(best.dep.leaveAt + best.travelMinutes * 60)}">↗ ${fmtTime(best.dep.leaveAt)} · ↙ ${fmtTime(best.dep.leaveAt + best.travelMinutes * 60)}</div>` : '');
   } else if (best.isWatched) {
     depHtml = `<div style="color:var(--text-muted);font-size:13px">Collecting data…</div>`;
   } else {
     depHtml = `<div style="color:var(--text-muted);font-size:13px">~${best.travelMinutes} min one way</div>`;
   }
 
-  const stat = v => `<div style="background:var(--surface2);border-radius:8px;padding:10px;text-align:center">
+  const stat = v => `<div style="background:var(--surface2);border-radius:8px;padding:10px;text-align:center${v.title ? ';cursor:help' : ''}"${v.title ? ` title="${v.title}"` : ''}>
     <div style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">${v.label}</div>
     <div class="${v.cls ?? 'cat-profit-pos'}" style="font-size:${v.size ?? 15}px;font-weight:800">${v.val}</div>
   </div>`;
@@ -2265,7 +2513,7 @@ function renderPick() {
       ${stat({label:'Profit/min', val:`+$${best.ppm.toFixed(0)}/min`})}
       ${stat({label:'Profit/unit', val:`+$${best.profit.toLocaleString()}`})}
       ${stat({label:'Potential', val:`+$${best.potential.toLocaleString()}`, size:12})}
-      ${stat({label:'In-stock chance', val:`${pct}%`, cls: chanceCls})}
+      ${stat({label:'In-stock chance', val:`${pct}%`, cls: chanceCls, title: best.survivalReason ?? ''})}
     </div>
     <div style="background:var(--surface2);border-radius:8px;padding:10px;text-align:center;margin-bottom:8px">
       <div style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Cash to bring</div>
@@ -2457,6 +2705,13 @@ function filterCatalog() {
     potential:    numSort(r => { const p = profitOf(r.item); return p !== null ? p * travelCapacity : null; }),
     profitpermin: numSort(r => { const p = profitOf(r.item); return (p !== null && r.travelMinutes) ? p / r.travelMinutes : null; }),
     cash:         numSort(r => r.item.cost ? r.item.cost * travelCapacity : null),
+    chance:       numSort(r => {
+      const qty = r.item.quantity ?? 0;
+      if (!qty || !r.travelMinutes) return null;
+      const dep   = statusMap[key(r.country, r.item.name)]?.departure;
+      const stats = statusMap[key(r.country, r.item.name)]?.stats;
+      return stockSurvival(qty, r.travelMinutes, stats, dep);
+    }),
     departure:    numSort(r => {
       const dep = statusMap[key(r.country, r.item.name)]?.departure;
       if (!dep?.ready) return null;
@@ -2479,6 +2734,7 @@ function filterCatalog() {
       ${th('stock','Stock','num')}
       ${th('buy','Buy','num')}
       ${hasPrices ? th('sell','Sell','num') + th('profit','Profit/unit','num') + th('profitpermin','Profit/min','num') + th('potential','Potential','num') + th('cash','Cash needed','num') : ''}
+      ${th('chance','Chance','num')}
       ${th('departure','Departure')}
       <th></th>
     </tr></thead>`;
@@ -2486,7 +2742,8 @@ function filterCatalog() {
     const tbodyRows = allRows.map(({ country, travelMinutes, item: i }) => {
       const mt = m(country);
       const isWatched = watchedSet.has(`${country}\x00${i.name.toLowerCase()}`);
-      const dep = isWatched ? statusMap[key(country, i.name)]?.departure : null;
+      const dep   = isWatched ? statusMap[key(country, i.name)]?.departure   : null;
+      const stats = isWatched ? statusMap[key(country, i.name)]?.stats       : null;
       const qty = i.quantity ?? 0;
       const badgeCls = qty > 100 ? 'b-high' : qty > 20 ? 'b-med' : qty > 0 ? 'b-low' : 'b-empty';
       const badgeLbl = qty > 100 ? 'HIGH' : qty > 20 ? 'MED' : qty > 0 ? 'LOW' : 'EMPTY';
@@ -2524,7 +2781,7 @@ function filterCatalog() {
       if (dep?.ready) {
         const cls = dep.recommendation?.toLowerCase().includes('now') ? 'cat-profit-pos' : 'dep-soon';
         depCell = `<div class="${cls}" style="font-weight:700;font-size:12px">${dep.recommendation}</div>`
-          + (dep.leaveAt ? `<div style="font-size:11px;color:var(--text-muted)">${fmtTime(dep.leaveAt)}</div>` : '');
+          + (dep.leaveAt ? `<div style="font-size:11px;color:var(--text-muted);cursor:help" title="Depart ${fmtTime(dep.leaveAt)} + ${travelMinutes} min travel = Land ${fmtTime(dep.leaveAt + travelMinutes * 60)}">↗ ${fmtTime(dep.leaveAt)} · ↙ ${fmtTime(dep.leaveAt + travelMinutes * 60)}</div>` : '');
       } else if (isWatched) {
         depCell = `<span style="color:var(--text-muted);font-size:11px">Collecting…</span>`;
       } else {
@@ -2537,6 +2794,7 @@ function filterCatalog() {
         <td class="num"><span class="badge ${badgeCls}">${badgeLbl}</span></td>
         <td class="num cat-buy">${buy}</td>
         ${priceCols}
+        <td class="num">${(() => { if ((!qty && !dep?.ready) || !travelMinutes) return '<span style="color:var(--text-muted)">—</span>'; const sv = stockSurvival(qty, travelMinutes, stats, dep); const p = Math.round(sv * 100); if (p <= 0) return '<span style="color:var(--text-muted)">—</span>'; const cl = p >= 75 ? 'cat-profit-pos' : p >= 50 ? 'dep-soon' : 'cat-profit-neg'; const reason = stockSurvivalReason(qty, travelMinutes, stats, dep, sv); return `<span class="${cl}" style="font-weight:700;cursor:help" title="${reason}">${p}%</span>`; })()}</td>
         <td style="font-size:12px">${depCell}</td>
         <td>${watchBtn}</td>
       </tr>`;
@@ -2783,7 +3041,7 @@ function _renderPlannerResults(trips, startCash, hours, usedMinutes, totalMinute
 
         <div style="text-align:center;min-width:60px">
           <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">CHANCE</div>
-          <div style="font-weight:700;font-size:16px" class="${chanceCls}">${pct}%</div>
+          <div style="font-weight:700;font-size:16px;cursor:help" class="${chanceCls}" title="${t.survivalReason ?? ''}">${pct}%</div>
         </div>
 
         <div style="text-align:center;min-width:110px">
