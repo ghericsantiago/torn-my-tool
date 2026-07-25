@@ -1,0 +1,2494 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Torn Travel Predictor</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flag-icons@7.2.3/css/flag-icons.min.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<style>
+:root {
+  --bg:          #0f1117;
+  --surface:     #1a1d27;
+  --surface2:    #212436;
+  --border:      #2a2d3e;
+  --text:        #e8eaf0;
+  --text-dim:    #8b8fa8;
+  --text-muted:  #50536a;
+  --accent:      #5c7cfa;
+  --accent-dark: #3a5bd9;
+  --green:       #51cf66;
+  --yellow:      #fcc419;
+  --red:         #ff6b6b;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ── NAV ───────────────────────────────────────────────── */
+nav {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center;
+  padding: 0 20px; height: 52px; gap: 8px;
+}
+
+.nav-logo {
+  font-weight: 800; font-size: 15px;
+  white-space: nowrap; letter-spacing: .3px; flex: 1;
+}
+.nav-logo span { color: var(--accent); }
+
+.nav-right {
+  display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+}
+
+/* ── LAYOUT ────────────────────────────────────────────── */
+.layout {
+  display: flex;
+  height: calc(100vh - 52px);
+}
+
+/* ── SIDEBAR ───────────────────────────────────────────── */
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-actions {
+  margin: 14px 12px 10px;
+  display: flex;
+  gap: 6px;
+}
+.sidebar-actions .btn {
+  flex: 1;
+  text-align: center;
+  padding: 8px;
+}
+
+.sidebar-filter {
+  padding: 8px 12px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.sf-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 7px;
+}
+#sf-countries {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.sf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .12s;
+  white-space: nowrap;
+}
+.sf-chip:hover { border-color: var(--text-dim); color: var(--text-dim); }
+.sf-chip.active {
+  background: rgba(92,124,250,.15);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.sidebar-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 0 16px;
+}
+
+.sidebar-empty {
+  padding: 16px 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.sidebar-group { margin-bottom: 4px; }
+
+.sidebar-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px 5px;
+  cursor: pointer;
+  user-select: none;
+}
+.sidebar-group-header:hover { background: var(--surface2); }
+.sidebar-group-header.active { background: rgba(92,124,250,.1); }
+
+.sg-name {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .9px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.sg-name.active { color: var(--accent); }
+
+.sg-count {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--surface2);
+  border-radius: 10px;
+  padding: 1px 6px;
+}
+
+.sidebar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 20px;
+  cursor: pointer;
+  transition: background .1s;
+  position: relative;
+}
+.sidebar-row:hover { background: var(--surface2); }
+.sidebar-row:hover .row-rm { opacity: 1; }
+
+.sr-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--cc);
+  flex-shrink: 0;
+}
+.sr-flag { font-size: 14px; flex-shrink: 0; }
+.sr-name { font-size: 12px; color: var(--text-dim); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sr-qty  { font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); flex-shrink: 0; }
+.sr-qty.zero { color: var(--text-muted); }
+
+.row-rm {
+  opacity: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px;
+  transition: all .1s;
+  flex-shrink: 0;
+}
+.row-rm:hover { color: var(--red); }
+
+.ws-indicator { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); }
+.ws-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text-muted); transition: background .4s; flex-shrink: 0;
+}
+.ws-dot.on { background: var(--green); }
+
+.btn {
+  border: none; cursor: pointer; border-radius: 7px;
+  font-size: 13px; font-weight: 600; transition: all .15s; white-space: nowrap;
+}
+.btn-primary { background: var(--accent); color: #fff; padding: 6px 14px; }
+.btn-primary:hover { background: var(--accent-dark); }
+.btn-ghost {
+  background: none; border: 1px solid var(--border);
+  color: var(--text-dim); padding: 5px 12px;
+}
+.btn-ghost:hover { border-color: var(--text-muted); color: var(--text); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── MAIN ──────────────────────────────────────────────── */
+main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 20px;
+  min-width: 0;
+}
+
+/* ── EMPTY STATE ───────────────────────────────────────── */
+#empty-state {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  min-height: 65vh; text-align: center; gap: 14px;
+}
+#empty-state h2 { font-size: 22px; font-weight: 800; }
+#empty-state p  { color: var(--text-dim); max-width: 340px; }
+
+/* ── ITEM HEADER ───────────────────────────────────────── */
+.item-header {
+  display: flex; align-items: center; gap: 16px;
+  flex-wrap: wrap; margin-bottom: 18px;
+}
+.item-title { font-size: 20px; font-weight: 800; letter-spacing: 1px; }
+.item-subtitle { color: var(--text-dim); font-size: 13px; }
+
+.mode-toggle {
+  margin-left: auto;
+  display: flex; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; padding: 3px; gap: 2px;
+}
+.mode-btn {
+  background: none; border: none; color: var(--text-muted);
+  padding: 4px 12px; border-radius: 5px; cursor: pointer;
+  font-size: 12px; font-weight: 700; letter-spacing: .3px; transition: all .15s;
+}
+.mode-btn.active { background: var(--surface2); color: var(--text); }
+
+/* ── COUNTRY CARDS ─────────────────────────────────────── */
+#country-cards {
+  display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px;
+}
+
+.ccard {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: 10px; padding: 10px 16px; cursor: pointer;
+  transition: all .15s; min-width: 155px; user-select: none; position: relative; overflow: hidden;
+}
+.ccard::before {
+  content: ''; position: absolute; inset: 0;
+  background: var(--cc); opacity: 0; transition: opacity .15s;
+}
+.ccard:hover::before { opacity: .06; }
+.ccard.active { border-color: var(--cc); }
+.ccard.active::before { opacity: .1; }
+.ccard.inactive { opacity: .38; }
+
+.ccard-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--cc); flex-shrink: 0; position: relative;
+}
+.ccard-info { flex: 1; min-width: 0; position: relative; }
+.ccard-code { font-size: 13px; font-weight: 700; }
+.ccard-name { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ccard-qty  { font-size: 16px; font-weight: 800; position: relative; font-variant-numeric: tabular-nums; }
+.ccard-qty.zero { color: var(--text-muted); }
+
+/* ── CHART ─────────────────────────────────────────────── */
+.chart-panel {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px; margin-bottom: 20px;
+}
+.chart-empty {
+  height: 280px; display: flex; align-items: center;
+  justify-content: center; color: var(--text-muted); font-size: 13px;
+}
+.chart-canvas-wrap { height: 280px; position: relative; }
+#main-chart { width: 100% !important; height: 100% !important; }
+
+/* ── TABLE ─────────────────────────────────────────────── */
+.table-panel {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden;
+}
+.table-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px; border-bottom: 1px solid var(--border);
+}
+.table-topbar h3 { font-size: 13px; font-weight: 700; letter-spacing: .4px; }
+#last-upd { font-size: 11px; color: var(--text-muted); }
+
+table { width: 100%; border-collapse: collapse; }
+
+thead th {
+  padding: 9px 14px;
+  text-align: left; font-size: 10px; font-weight: 700;
+  letter-spacing: .9px; text-transform: uppercase;
+  color: var(--text-muted); border-bottom: 1px solid var(--border);
+  cursor: pointer; user-select: none; white-space: nowrap; transition: color .1s;
+}
+thead th:hover { color: var(--text-dim); }
+thead th.sorted-col { color: var(--accent); }
+thead th:first-child { padding-left: 20px; }
+thead th:last-child { cursor: default; }
+
+tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background .1s; position: relative;
+}
+tbody tr:last-child { border-bottom: none; }
+tbody tr:hover { background: var(--surface2); }
+
+tbody td {
+  padding: 11px 14px; vertical-align: middle;
+  font-size: 13px; font-variant-numeric: tabular-nums;
+}
+tbody td:first-child { padding-left: 22px; }
+
+tbody tr { border-left: 3px solid var(--rc); }
+
+.flag-cell { display: flex; align-items: center; gap: 10px; }
+.flag .fi, .ccard-code .fi, .sf-chip .fi, .chip .fi { font-size: 16px; vertical-align: middle; }
+.flag { font-size: 16px; }
+.cname { font-weight: 600; }
+
+.badge {
+  display: inline-flex; padding: 2px 7px; border-radius: 4px;
+  font-size: 10px; font-weight: 800; letter-spacing: .4px;
+}
+.b-high  { background: rgba(81,207,102,.15);  color: #51cf66; }
+.b-med   { background: rgba(252,196,25,.15);   color: #fcc419; }
+.b-low   { background: rgba(255,107,107,.15);  color: #ff6b6b; }
+.b-empty { background: rgba(100,100,130,.12);  color: var(--text-muted); }
+
+.dep-now   { color: var(--red);    font-weight: 700; }
+.dep-soon  { color: var(--yellow); font-weight: 700; }
+.dep-later { color: var(--green);  font-weight: 700; }
+.dep-na    { color: var(--text-muted); font-size: 12px; }
+
+.restock-main  { font-weight: 600; }
+.restock-range { color: var(--text-muted); font-size: 11px; margin-top: 1px; }
+
+.conf-wrap { display: flex; align-items: center; gap: 8px; min-width: 90px; }
+.conf-bg   { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.conf-fill { height: 100%; border-radius: 2px; background: var(--accent); transition: width .4s; }
+.conf-pct  { font-size: 11px; color: var(--text-dim); min-width: 26px; }
+
+.upd-cell  { color: var(--text-muted); font-size: 12px; }
+
+.btn-rm {
+  background: none; border: 1px solid var(--border); color: var(--text-muted);
+  border-radius: 5px; padding: 3px 8px; cursor: pointer;
+  font-size: 11px; font-weight: 600; transition: all .15s; white-space: nowrap;
+}
+.btn-rm:hover { border-color: var(--red); color: var(--red); }
+
+.no-rows td {
+  text-align: center; color: var(--text-muted); padding: 48px; font-size: 13px;
+}
+
+/* ── MODAL ─────────────────────────────────────────────── */
+.overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.65);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 200; opacity: 0; pointer-events: none; transition: opacity .2s;
+}
+.overlay.open { opacity: 1; pointer-events: auto; }
+
+.modal {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 28px; width: 430px;
+  max-width: calc(100vw - 32px);
+  transform: translateY(12px); transition: transform .2s;
+}
+.overlay.open .modal { transform: translateY(0); }
+.modal h2 { font-size: 16px; font-weight: 800; margin-bottom: 22px; }
+
+.field { margin-bottom: 18px; }
+.field label {
+  display: block; font-size: 11px; font-weight: 700;
+  letter-spacing: .7px; text-transform: uppercase;
+  color: var(--text-dim); margin-bottom: 7px;
+}
+.field input {
+  width: 100%; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); padding: 9px 12px;
+  font-size: 14px; outline: none; font-family: inherit;
+  transition: border-color .15s;
+}
+.field input:focus { border-color: var(--accent); }
+
+.preview-box {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px; min-height: 50px;
+  display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; margin-top: 8px;
+}
+
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: rgba(92,124,250,.14); border: 1px solid rgba(92,124,250,.3);
+  border-radius: 6px; padding: 3px 9px; font-size: 12px; font-weight: 600;
+}
+.chip-qty { color: var(--text-muted); }
+
+.modal-footer {
+  display: flex; gap: 10px; margin-top: 22px; justify-content: flex-end;
+}
+
+/* ── TAG INPUT ─────────────────────────────────────────── */
+.tag-input-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: text;
+  transition: border-color .15s;
+  min-height: 42px;
+  align-items: center;
+}
+.tag-input-wrap:focus-within { border-color: var(--accent); }
+#m-tags { display: contents; }
+.tag-input-wrap input {
+  flex: 1;
+  min-width: 140px;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  padding: 3px 2px;
+}
+.sel-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(92,124,250,.18);
+  border: 1px solid rgba(92,124,250,.35);
+  border-radius: 5px;
+  padding: 2px 4px 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sel-tag-rm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px; height: 16px;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+  transition: all .1s;
+}
+.sel-tag-rm:hover { background: rgba(255,107,107,.2); color: var(--red); }
+
+/* ── AUTOCOMPLETE ──────────────────────────────────────── */
+.ac-dropdown {
+  position: absolute;
+  left: 0; right: 0;
+  top: calc(100% + 4px);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 300;
+  box-shadow: 0 8px 24px rgba(0,0,0,.4);
+}
+.ac-item {
+  padding: 9px 13px;
+  cursor: pointer;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+  transition: background .1s;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ac-item:last-child { border-bottom: none; }
+.ac-item:hover, .ac-item.focused { background: var(--accent); color: #fff; }
+.ac-item:hover .ac-item-sub, .ac-item.focused .ac-item-sub { color: rgba(255,255,255,.7); }
+.ac-item-sub { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.ac-item mark { background: none; color: var(--yellow); font-weight: 700; }
+.ac-item.focused mark { color: #fff; }
+.ac-empty { padding: 12px 13px; color: var(--text-muted); font-size: 13px; }
+
+/* ── SETTINGS ──────────────────────────────────────────── */
+.btn-icon {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  width: 32px; height: 32px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .15s;
+  flex-shrink: 0;
+}
+.btn-icon:hover { border-color: var(--text-muted); color: var(--text); }
+
+.retention-preset {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all .15s;
+}
+.retention-preset:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── CATALOG MODAL ─────────────────────────────────────── */
+.modal-wide {
+  width: min(1200px, calc(100vw - 40px));
+  max-height: calc(100vh - 60px);
+  display: flex; flex-direction: column; padding: 0;
+}
+.modal-wide .modal-header {
+  padding: 24px 28px 16px;
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.modal-wide .modal-header h2 { margin-bottom: 14px; }
+.cat-search-row { display: flex; gap: 10px; }
+.cat-search-row input {
+  flex: 1; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text); padding: 8px 12px;
+  font-size: 13px; outline: none; font-family: inherit; transition: border-color .15s;
+}
+.cat-search-row input:focus { border-color: var(--accent); }
+.cat-country-tabs {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px;
+}
+.cat-tab {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+  background: none; color: var(--text-dim);
+  font-size: 11px; font-weight: 600; cursor: pointer; transition: all .15s;
+}
+.cat-tab:hover { border-color: var(--accent); color: var(--accent); }
+.cat-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cat-tab .fi { font-size: 12px; }
+.catalog-body { overflow-y: auto; flex: 1; }
+.cat-profit-pos { color: #51cf66; font-weight: 700; }
+.cat-profit-neg { color: #ff6b6b; font-weight: 700; }
+.cat-profit-na  { color: var(--text-muted); }
+.cat-table {
+  width: 100%; border-collapse: collapse;
+}
+.cat-table thead th {
+  padding: 8px 12px;
+  font-size: 10px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase;
+  color: var(--text-muted); border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  white-space: nowrap; cursor: pointer; user-select: none; vertical-align: bottom;
+  position: sticky; top: 0; z-index: 4;
+}
+.cat-table thead th:first-child { padding-left: 28px; }
+.cat-table thead th:last-child  { padding-right: 28px; cursor: default; }
+.cat-table thead th.num         { text-align: right; }
+.cat-table thead th:hover:not(:last-child) { color: var(--text-dim); }
+.cat-table thead th.cat-sorted  { color: var(--accent); }
+.cat-table tbody td {
+  padding: 9px 12px; border-bottom: 1px solid var(--border);
+  font-size: 13px; vertical-align: middle; font-variant-numeric: tabular-nums;
+}
+.cat-table tbody td:first-child  { padding-left: 28px; }
+.cat-table tbody td:last-child   { padding-right: 28px; text-align: right; }
+.cat-table tbody td.num          { text-align: right; }
+.cat-table tbody tr:last-child td { border-bottom: none; }
+.cat-table tbody tr:hover        { background: var(--surface2); }
+.cat-item-name { font-weight: 500; }
+.cat-country-tag { font-size: 10px; color: var(--text-muted); margin-left: 6px; }
+.cat-buy  { color: var(--text-muted); }
+.cat-sell { color: var(--text-dim); }
+.btn-watch {
+  background: none; border: 1px solid var(--accent); color: var(--accent);
+  border-radius: 6px; padding: 3px 10px; cursor: pointer;
+  font-size: 11px; font-weight: 700; transition: all .15s; white-space: nowrap;
+}
+.btn-watch:hover { background: var(--accent); color: #fff; }
+.btn-watch.watching {
+  background: rgba(92,124,250,.1); border-color: var(--border);
+  color: var(--text-muted); cursor: default;
+}
+.catalog-footer {
+  padding: 14px 28px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+}
+.cat-stat { font-size: 12px; color: var(--text-muted); }
+.cat-empty { padding: 48px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+/* ── RECOMMEND MODAL ───────────────────────────────────── */
+.rec-rank {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%;
+  font-size: 10px; font-weight: 800;
+  background: var(--surface2); color: var(--text-muted); flex-shrink: 0;
+}
+.rec-rank.gold { background: rgba(255,200,0,.18); color: #fcc419; }
+.rec-rank.silver { background: rgba(180,180,200,.15); color: #aaa; }
+.rec-rank.bronze { background: rgba(200,140,80,.15); color: #cd853f; }
+
+/* ── SCROLLBAR ─────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">Torn <span>Predictor</span></div>
+  <div class="nav-right">
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="btn-24h-fmt" onclick="setTimeFmt('24')">24h</button>
+      <button class="mode-btn" id="btn-12h-fmt" onclick="setTimeFmt('12')">12h</button>
+    </div>
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="btn-tct" onclick="setTz('utc')">TCT</button>
+      <button class="mode-btn" id="btn-local" onclick="setTz('local')">Local</button>
+    </div>
+    <button class="btn-icon" id="btn-pick" onclick="openPick()" title="Best Pick Right Now" style="font-size:17px">🏆</button>
+    <button class="btn-icon" id="btn-settings" onclick="openSettings()" title="Settings">⚙</button>
+    <div class="ws-indicator">
+      <div class="ws-dot" id="ws-dot"></div>
+      <span id="ws-label">connecting</span>
+    </div>
+  </div>
+</nav>
+
+<!-- BODY LAYOUT -->
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-actions">
+      <button class="btn btn-primary" id="btn-add">+ Add Item</button>
+      <button class="btn btn-ghost" id="btn-catalog" title="Browse all items by country">Catalog</button>
+    </div>
+
+    <div class="sidebar-filter">
+      <div class="sf-label">Filter by country</div>
+      <div id="sf-countries"></div>
+    </div>
+
+    <div class="sidebar-filter" id="sf-cat-wrap" style="display:none">
+      <div class="sf-label">Filter by category</div>
+      <div id="sf-categories"></div>
+    </div>
+
+    <div class="sidebar-list" id="sidebar-list">
+      <div class="sidebar-empty">No items monitored yet.</div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main>
+    <div id="empty-state" style="display:none">
+      <h2>No items monitored</h2>
+      <p>Click "+ Add Item" in the sidebar to start tracking foreign stock.</p>
+      <button class="btn btn-primary" onclick="openModal()">+ Add Item</button>
+    </div>
+
+    <div id="item-view" style="display:none">
+      <div class="item-header">
+        <h1 class="item-title" id="item-title"></h1>
+        <p class="item-subtitle" id="item-subtitle"></p>
+        <div class="mode-toggle">
+          <button class="mode-btn" id="btn-12h"  onclick="setHours(12)">12h</button>
+          <button class="mode-btn active" id="btn-24h" onclick="setHours(24)">24h</button>
+          <button class="mode-btn" id="btn-36h"  onclick="setHours(36)">36h</button>
+          <button class="mode-btn" id="btn-48h"  onclick="setHours(48)">48h</button>
+        </div>
+        <div class="mode-toggle">
+          <button class="mode-btn active" id="btn-stock" onclick="setMode('stock')">Stock</button>
+          <button class="mode-btn"        id="btn-price" onclick="setMode('price')">Price</button>
+        </div>
+      </div>
+
+      <div id="country-cards"></div>
+
+      <div class="chart-panel">
+        <div class="chart-empty" id="chart-empty">Waiting for history data…</div>
+        <div class="chart-canvas-wrap" id="chart-wrap" style="display:none">
+          <canvas id="main-chart"></canvas>
+        </div>
+      </div>
+
+      <div class="table-panel">
+        <div class="table-topbar">
+          <h3>COUNTRY STATUS</h3>
+          <span id="last-upd"></span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th onclick="sort('country')">Country<span id="si-country"></span></th>
+              <th onclick="sort('status')">Status<span id="si-status"></span></th>
+              <th onclick="sort('qty')">Stock<span id="si-qty"></span></th>
+              <th onclick="sort('cost')">Price<span id="si-cost"></span></th>
+              <th onclick="sort('profit')">Profit/unit<span id="si-profit"></span></th>
+              <th onclick="sort('potential')">Potential<span id="si-potential"></span></th>
+              <th onclick="sort('restock')">Next Restock<span id="si-restock"></span></th>
+              <th onclick="sort('dep')">Departure<span id="si-dep"></span></th>
+              <th onclick="sort('conf')">Confidence<span id="si-conf"></span></th>
+              <th>Updated</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+</div>
+
+<!-- ADD MODAL -->
+<div class="overlay" id="modal">
+  <div class="modal" role="dialog" aria-modal="true">
+    <h2>Monitor Items</h2>
+    <div class="field" style="position:relative">
+      <label>Items <span id="m-sel-count" style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0"></span></label>
+      <div class="tag-input-wrap" id="tag-wrap" onclick="document.getElementById('m-item').focus()">
+        <div id="m-tags"></div>
+        <input id="m-item" type="text" placeholder="Search and pick items…" autocomplete="off" spellcheck="false">
+      </div>
+      <div id="m-dropdown" class="ac-dropdown" style="display:none"></div>
+      <div id="m-hint" style="display:none;font-size:11px;color:var(--text-muted);margin-top:5px">
+        Ctrl+click to pick multiple without closing
+      </div>
+    </div>
+    <div class="field">
+      <label>Countries to add <span id="m-count" style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0"></span></label>
+      <div class="preview-box" id="m-preview">
+        <span style="color:var(--text-muted);font-size:12px;padding:2px">Select one or more items above…</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="m-submit" onclick="submitAdd()" disabled>Add All</button>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="overlay" id="settings-modal">
+  <div class="modal" role="dialog" aria-modal="true">
+    <h2>Settings</h2>
+
+    <div class="field">
+      <label>Data retention <span style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">(days stored in database)</span></label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="s-retention" type="number" min="1" max="90" step="1" style="width:90px">
+        <span style="font-size:12px;color:var(--text-muted)">days (1–90)</span>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+        <button class="retention-preset" onclick="setRetentionPreset(3)">3d</button>
+        <button class="retention-preset" onclick="setRetentionPreset(7)">7d</button>
+        <button class="retention-preset" onclick="setRetentionPreset(14)">14d</button>
+        <button class="retention-preset" onclick="setRetentionPreset(30)">30d</button>
+      </div>
+      <p style="margin-top:10px;font-size:12px;color:var(--text-muted);line-height:1.6">
+        Longer retention = more cycles for better predictions, but more disk space.<br>
+        Reducing this will immediately prune old data on the next poll.
+      </p>
+    </div>
+
+    <div class="field">
+      <label>Travel Capacity <span style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">(items per trip)</span></label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="s-capacity" type="number" min="1" max="999" step="1" style="width:90px" value="28">
+        <span style="font-size:12px;color:var(--text-muted)">items (1–999)</span>
+      </div>
+      <p style="margin-top:6px;font-size:12px;color:var(--text-muted);line-height:1.6">
+        Used to calculate Potential income = profit/unit × min(stock, capacity).
+      </p>
+    </div>
+
+    <div class="field">
+      <label>Sell Commission <span style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">(market listing fee)</span></label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="s-commission" type="number" min="0" max="100" step="0.1" style="width:90px" value="5">
+        <span style="font-size:12px;color:var(--text-muted)">% (0–100)</span>
+      </div>
+      <p style="margin-top:6px;font-size:12px;color:var(--text-muted);line-height:1.6">
+        Deducted from sell price before calculating profit. Torn charges 5% by default.
+      </p>
+    </div>
+
+    <div class="field">
+      <label>Torn API Key <span style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">(for income calculations)</span></label>
+      <input id="s-apikey" type="password" placeholder="Enter your Torn API key…" autocomplete="off" style="font-family:monospace">
+      <p style="margin-top:8px;font-size:12px;color:var(--text-muted);line-height:1.6">
+        Used server-side only to fetch Torn market prices. Your key is never sent to the browser.<br>
+        Needs <strong>torn → items</strong> access (Public Data is enough).
+      </p>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeSettings()">Cancel</button>
+      <button class="btn btn-ghost" onclick="closeSettings();openLogs()" style="margin-right:auto">Show Logs</button>
+      <button class="btn btn-primary" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- LOGS MODAL -->
+<div class="overlay" id="logs-modal">
+  <div class="modal" role="dialog" aria-modal="true" style="max-width:860px;width:95vw">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <h2 style="margin:0">Server Logs</h2>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="logs-count" style="font-size:12px;color:var(--text-muted)"></span>
+        <button class="btn btn-ghost" style="padding:4px 10px;font-size:12px" onclick="refreshLogs()">↻ Refresh</button>
+      </div>
+    </div>
+    <pre id="logs-output" style="
+      background:var(--surface2);border-radius:8px;padding:12px;
+      font-size:12px;line-height:1.6;font-family:monospace;
+      max-height:60vh;overflow-y:auto;white-space:pre-wrap;word-break:break-all;
+      margin:0 0 14px;color:var(--text-dim)
+    "></pre>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeLogs()">Close</button>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-left:auto">
+        <input type="checkbox" id="logs-autoscroll" checked> Auto-scroll
+      </label>
+    </div>
+  </div>
+</div>
+
+<!-- CATALOG MODAL (includes Best Picks view) -->
+<div class="overlay" id="catalog-modal">
+  <div class="modal modal-wide" role="dialog" aria-modal="true">
+    <div class="modal-header">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <h2 style="margin-bottom:0" id="cat-title">Item Catalog</h2>
+        <div class="mode-toggle">
+          <button class="mode-btn active" id="cat-view-catalog" onclick="switchCatView('catalog')">Catalog</button>
+          <button class="mode-btn" id="cat-view-picks" onclick="switchCatView('bestpicks')">⚡ Best Picks</button>
+        </div>
+      </div>
+      <!-- Catalog controls -->
+      <div id="cat-catalog-controls">
+        <div class="cat-search-row">
+          <input type="text" id="cat-search" placeholder="Search items…" autocomplete="off" oninput="filterCatalog()">
+        </div>
+        <div class="cat-country-tabs" id="cat-tabs"></div>
+        <div class="cat-country-tabs" id="cat-cat-tabs" style="display:none"></div>
+      </div>
+      <!-- Best Picks controls -->
+      <div id="cat-picks-controls" style="display:none">
+        <div class="cat-country-tabs" id="rec-filters">
+          <button class="cat-tab active" onclick="setRecFilter('all')">All items</button>
+          <button class="cat-tab" onclick="setRecFilter('watched')">Watched only</button>
+        </div>
+        <div class="cat-country-tabs" style="gap:5px">
+          <span style="font-size:11px;color:var(--text-muted);align-self:center;margin-right:2px">Optimize:</span>
+          <button class="cat-tab active priority-btn" data-p="balanced" onclick="setPriority('balanced')">Balanced</button>
+          <button class="cat-tab priority-btn"        data-p="time"     onclick="setPriority('time')">Closest</button>
+          <button class="cat-tab priority-btn"        data-p="profit"   onclick="setPriority('profit')">Most Profit</button>
+          <button class="cat-tab priority-btn"        data-p="chance"   onclick="setPriority('chance')">Best Chance</button>
+        </div>
+        <div class="cat-country-tabs" id="picks-cat-tabs" style="display:none"></div>
+      </div>
+    </div>
+    <div class="catalog-body" id="cat-body">
+      <div class="cat-empty">Loading…</div>
+    </div>
+    <div class="catalog-footer">
+      <span class="cat-stat" id="cat-stat"></span>
+      <button class="btn btn-ghost" id="cat-refresh-btn" style="display:none" onclick="renderRecommend()">↻ Refresh</button>
+      <button class="btn btn-ghost" onclick="closeCatalog()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- BEST PICK MODAL (single recommendation) -->
+<div class="overlay" id="pick-modal">
+  <div class="modal" style="width:460px;max-width:calc(100vw - 32px)" role="dialog" aria-modal="true">
+    <div style="margin-bottom:10px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">Optimize for</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px">
+        <button class="sf-chip active priority-btn" data-p="balanced" onclick="setPriority('balanced')" style="font-size:11px">Balanced</button>
+        <button class="sf-chip priority-btn"        data-p="time"     onclick="setPriority('time')"     style="font-size:11px">Closest</button>
+        <button class="sf-chip priority-btn"        data-p="profit"   onclick="setPriority('profit')"   style="font-size:11px">Most Profit</button>
+        <button class="sf-chip priority-btn"        data-p="chance"   onclick="setPriority('chance')"   style="font-size:11px">Best Chance</button>
+      </div>
+    </div>
+    <div id="pick-cat-filter" style="margin-bottom:12px;display:none">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">Filter categories</div>
+      <div id="pick-cat-pills" style="display:flex;flex-wrap:wrap;gap:5px"></div>
+    </div>
+    <div id="pick-content"></div>
+    <div class="modal-footer" id="pick-footer">
+      <button class="btn btn-ghost" onclick="closePick()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ── Country metadata ───────────────────────────────── */
+const META = {
+  'Japan':          { code:'JP', iso:'jp', color:'#ff7043' },
+  'Canada':         { code:'CA', iso:'ca', color:'#ef5350' },
+  'South Africa':   { code:'ZA', iso:'za', color:'#4caf50' },
+  'United Kingdom': { code:'GB', iso:'gb', color:'#42a5f5' },
+  'Mexico':         { code:'MX', iso:'mx', color:'#ffa726' },
+  'Cayman Islands': { code:'KY', iso:'ky', color:'#ab47bc' },
+  'Hawaii':         { code:'HI', iso:'us', color:'#26c6da' },
+  'Argentina':      { code:'AR', iso:'ar', color:'#a1887f' },
+  'Switzerland':    { code:'CH', iso:'ch', color:'#ec407a' },
+  'China':          { code:'CN', iso:'cn', color:'#f44336' },
+  'UAE':            { code:'AE', iso:'ae', color:'#78909c' },
+};
+const m = c => META[c] ?? { code:(c||'??').slice(0,2).toUpperCase(), iso:'un', color:'#888' };
+const flag = mt => `<span class="fi fi-${mt.iso}"></span>`;
+
+/* ── State ──────────────────────────────────────────── */
+let watched     = [];
+let statusMap   = {};  // "country:item" → { snapshot, departure, stats, mae, ts }
+let historyData = {};  // "country:item" → { snapshots, restocks, sellouts }
+let activeItem  = null;
+let activeSet   = new Set();
+let chartMode   = 'stock';
+let chartHours  = 24;
+let tzMode      = 'utc';  // 'utc' = TCT, 'local' = browser local time
+let sidebarFilter = null; // null = all, else country name string
+let timeFmt     = '24';   // '24' | '12'
+let sortKey     = 'dep';
+let sortDir     = 1;
+let chart       = null;
+
+/* ── Utils ──────────────────────────────────────────── */
+const key = (c, i) => `${c}:${i}`;
+
+const fmtTime = ts => {
+  if (!ts) return '—';
+  const opts = {
+    hour: '2-digit', minute: '2-digit',
+    hour12: timeFmt === '12',
+    ...(tzMode === 'utc' ? { timeZone: 'UTC' } : {}),
+  };
+  return new Date(ts * 1000).toLocaleTimeString([], opts);
+};
+
+const fmtAgo = ts => {
+  if (!ts) return '—';
+  const s = Math.floor(Date.now() / 1000) - ts;
+  if (s < 5)    return 'just now';
+  if (s < 60)   return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s/60)}m ago`;
+  return `${Math.floor(s/3600)}h ago`;
+};
+
+const fmtNum  = n => (n == null ? '—' : n.toLocaleString());
+const fmtCost = n => (n == null ? '—' : `$${n.toLocaleString()}`);
+
+function getBadge(snap, stats) {
+  if (!snap || snap.quantity == null) return { l:'—',     cls:'b-empty' };
+  if (snap.quantity === 0)            return { l:'Empty', cls:'b-empty' };
+  const avg = stats?.averageStartingQuantity || 0;
+  if (!avg)                           return { l:'—',     cls:'b-empty' };
+  const r = snap.quantity / avg;
+  if (r >= 0.65) return { l:'High', cls:'b-high' };
+  if (r >= 0.30) return { l:'Med',  cls:'b-med'  };
+  return                { l:'Low',  cls:'b-low'  };
+}
+
+function depClass(dep) {
+  if (!dep?.ready) return 'dep-na';
+  if (dep.leaveInSeconds <= 120)  return 'dep-now';
+  if (dep.leaveInSeconds <= 600)  return 'dep-soon';
+  return 'dep-later';
+}
+
+/* ── Tabs ───────────────────────────────────────────── */
+const allItems     = () => [...new Set(watched.map(w => w.item))];
+const countriesFor = item => watched.filter(w => w.item === item).map(w => w.country);
+
+function renderTabs() {
+  // tabs removed — sidebar handles navigation
+}
+
+function renderSidebar() {
+  // ── Filter chips ──────────────────────────────────────
+  const allCountries = [...new Set(watched.map(w => w.country))].sort();
+  const sfEl = document.getElementById('sf-countries');
+  if (sfEl) {
+    if (!allCountries.length) {
+      sfEl.innerHTML = '';
+    } else {
+      const allChip = `<button class="sf-chip${!sidebarFilter ? ' active' : ''}" onclick="setSidebarFilter(null)">All</button>`;
+      const chips = allCountries.map(c => {
+        const mt  = m(c);
+        const active = sidebarFilter === c;
+        return `<button class="sf-chip${active ? ' active' : ''}" onclick="setSidebarFilter('${c}')">${flag(mt)} ${mt.code}</button>`;
+      }).join('');
+      sfEl.innerHTML = allChip + chips;
+    }
+  }
+
+  // ── Category filter chips ─────────────────────────────
+  const allItems_ = allItems();
+  const sfCatWrap = document.getElementById('sf-cat-wrap');
+  const hasCats   = Object.keys(tornCategories).length > 0;
+  if (sfCatWrap) sfCatWrap.style.display = hasCats && allItems_.length ? '' : 'none';
+  renderCatPills('sf-categories', sidebarCatFilter, 'setSidebarCatFilter', allItems_.map(i => i));
+
+  // ── Item list (filtered) ──────────────────────────────
+  const list = document.getElementById('sidebar-list');
+  let items = allItems_;
+
+  if (sidebarFilter) {
+    items = items.filter(item => countriesFor(item).includes(sidebarFilter));
+  }
+  if (sidebarCatFilter) {
+    items = items.filter(item => tornCategories[item] === sidebarCatFilter);
+  }
+
+  if (!items.length) {
+    list.innerHTML = `<div class="sidebar-empty">${
+      sidebarFilter ? `No items monitored for ${sidebarFilter}.` : 'No items monitored yet.'
+    }</div>`;
+    return;
+  }
+
+  list.innerHTML = items.map(item => {
+    const cs       = countriesFor(item);
+    const isActive = item === activeItem;
+    return `<div class="sidebar-group">
+      <div class="sidebar-group-header${isActive ? ' active' : ''}" onclick="selectItem('${item}')">
+        <span class="sg-name${isActive ? ' active' : ''}">${item}</span>
+        <span class="sg-count">${cs.length}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setSidebarFilter(country) {
+  sidebarFilter = country;
+  renderSidebar();
+}
+
+function setSidebarCatFilter(cat) {
+  sidebarCatFilter = cat;
+  renderSidebar();
+}
+
+/* ── Category pills helper ──────────────────────────────── */
+function renderCatPills(elId, activeVal, setter, itemsIterable) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const cats = new Set();
+  for (const name of itemsIterable) {
+    const c = tornCategories[name];
+    if (c) cats.add(c);
+  }
+  if (!cats.size) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.style.display = '';
+  const all = `<button class="cat-tab${!activeVal ? ' active' : ''}" onclick="${setter}(null)">All</button>`;
+  const pills = [...cats].sort().map(c =>
+    `<button class="cat-tab${activeVal === c ? ' active' : ''}" onclick="${setter}('${c.replace(/'/g, "\\'")}')">${c}</button>`
+  ).join('');
+  el.innerHTML = all + pills;
+}
+
+function selectItem(item) {
+  activeItem = item;
+  activeSet  = new Set(countriesFor(item));
+  renderSidebar();
+  renderView();
+  fetchHistory();
+}
+
+/* ── View ───────────────────────────────────────────── */
+function renderView() {
+  const ev = document.getElementById('empty-state');
+  const iv = document.getElementById('item-view');
+
+  if (!activeItem) {
+    ev.style.display = 'flex';
+    iv.style.display = 'none';
+    return;
+  }
+
+  ev.style.display = 'none';
+  iv.style.display = 'block';
+
+  const cs     = countriesFor(activeItem);
+  const active = cs.filter(c => activeSet.has(c)).length;
+
+  document.getElementById('item-title').textContent =
+    `${activeItem.toUpperCase()} — HISTORY`;
+  document.getElementById('item-subtitle').textContent =
+    `${active} of ${cs.length} ${cs.length === 1 ? 'country' : 'countries'} selected · click cards to toggle`;
+
+  renderCards(cs);
+  renderTable(cs);
+}
+
+/* ── Country cards ──────────────────────────────────── */
+function renderCards(cs) {
+  document.getElementById('country-cards').innerHTML = cs.map(c => {
+    const mt  = m(c);
+    const d   = statusMap[key(c, activeItem)];
+    const qty = d?.snapshot?.quantity ?? null;
+    const on  = activeSet.has(c);
+    return `<div class="ccard ${on ? 'active' : 'inactive'}"
+      style="--cc:${mt.color}" onclick="toggleCard('${c}')">
+      <div class="ccard-dot"></div>
+      <div class="ccard-info">
+        <div class="ccard-code">${flag(mt)} ${mt.code}</div>
+        <div class="ccard-name">${c}</div>
+      </div>
+      <div class="ccard-qty${qty === 0 ? ' zero' : ''}">${qty ?? '…'}</div>
+    </div>`;
+  }).join('');
+}
+
+function toggleCard(c) {
+  if (activeSet.has(c)) {
+    if (activeSet.size === 1) return;
+    activeSet.delete(c);
+  } else {
+    activeSet.add(c);
+  }
+  renderView();
+  rebuildChart();
+}
+
+/* ── Chart ──────────────────────────────────────────── */
+async function fetchHistory() {
+  if (!activeItem) return;
+  const cs = countriesFor(activeItem);
+  await Promise.all(cs.map(async c => {
+    try {
+      const r = await fetch(
+        `/api/history?country=${encodeURIComponent(c)}&item=${encodeURIComponent(activeItem)}&hours=${chartHours}`
+      );
+      historyData[key(c, activeItem)] = await r.json();
+    } catch { historyData[key(c, activeItem)] = null; }
+  }));
+  rebuildChart();
+}
+
+function rebuildChart() {
+  if (chart) { chart.destroy(); chart = null; }
+
+  const emptyEl = document.getElementById('chart-empty');
+  const wrapEl  = document.getElementById('chart-wrap');
+
+  const cs = [...activeSet].filter(c => countriesFor(activeItem).includes(c));
+  const hasData = cs.some(c => historyData[key(c, activeItem)]?.snapshots?.length > 0);
+
+  if (!hasData) {
+    emptyEl.style.display = 'flex';
+    wrapEl.style.display  = 'none';
+    return;
+  }
+  emptyEl.style.display = 'none';
+  wrapEl.style.display  = 'block';
+
+  const datasets    = [];
+  const annotations = {};
+  let   ai          = 0;
+
+  for (const c of cs) {
+    const hd = historyData[key(c, activeItem)];
+    if (!hd?.snapshots?.length) continue;
+    const mt   = m(c);
+    const col  = mt.color;
+    const yKey = chartMode === 'stock' ? 'quantity' : 'cost';
+
+    const pts = hd.snapshots
+      .filter(s => s[yKey] != null)
+      .map(s => ({ x: s.ts * 1000, y: s[yKey] }));
+    if (!pts.length) continue;
+
+    datasets.push({
+      label: c,
+      data: pts,
+      borderColor: col,
+      backgroundColor: col + '18',
+      borderWidth: 2,
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      fill: true,
+      tension: 0.35,
+    });
+
+    for (const re of (hd.restocks ?? [])) {
+      annotations[`r${ai++}`] = {
+        type: 'line',
+        xMin: re.ts * 1000, xMax: re.ts * 1000,
+        borderColor: col + 'bb',
+        borderWidth: 1,
+        borderDash: [4, 4],
+        label: {
+          display: true, content: '↑', color: col,
+          font: { size: 11, weight: 'bold' },
+          position: 'start', padding: 2, backgroundColor: 'transparent',
+        },
+      };
+    }
+  }
+
+  chart = new Chart(document.getElementById('main-chart'), {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: {
+          type: 'time',
+          time: { displayFormats: { minute:'HH:mm', hour:'HH:mm' }, tooltipFormat:'HH:mm' },
+          grid:  { color: '#2a2d3e' },
+          ticks: {
+            color: '#50536a', maxRotation: 0, maxTicksLimit: 8,
+            callback: val => new Date(val).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', hour12: timeFmt === '12', ...(tzMode === 'utc' ? { timeZone:'UTC' } : {}) }),
+          },
+          border: { color: '#2a2d3e' },
+        },
+        y: {
+          beginAtZero: true,
+          grid:  { color: '#2a2d3e' },
+          ticks: { color: '#50536a' },
+          border: { color: '#2a2d3e' },
+          title: {
+            display: true,
+            text: chartMode === 'stock' ? 'Quantity' : 'Price ($)',
+            color: '#50536a', font: { size: 11 },
+          },
+        },
+      },
+      plugins: {
+        legend: {
+          labels: { color:'#8b8fa8', boxWidth:10, boxHeight:10, padding:16, font:{ size:12 } },
+        },
+        tooltip: {
+          backgroundColor: '#1a1d27', borderColor: '#2a2d3e', borderWidth: 1,
+          titleColor: '#8b8fa8', bodyColor: '#e8eaf0', padding: 10,
+          callbacks: {
+            title: items => {
+              const ts = items[0]?.parsed?.x;
+              if (!ts) return '';
+              const opts = { hour:'2-digit', minute:'2-digit', hour12: timeFmt === '12', ...(tzMode === 'utc' ? { timeZone:'UTC' } : {}) };
+              return new Date(ts).toLocaleTimeString([], opts) + (tzMode === 'utc' ? ' TCT' : ' Local');
+            },
+            label: item => ` ${item.dataset.label}: ${item.parsed.y}`,
+          },
+        },
+        annotation: { annotations },
+      },
+    },
+  });
+}
+
+function setMode(mode) {
+  chartMode = mode;
+  document.getElementById('btn-stock').classList.toggle('active', mode === 'stock');
+  document.getElementById('btn-price').classList.toggle('active', mode === 'price');
+  rebuildChart();
+}
+
+function setHours(h) {
+  chartHours = h;
+  [12, 24, 36, 48].forEach(n =>
+    document.getElementById(`btn-${n}h`).classList.toggle('active', n === h)
+  );
+  fetchHistory();
+}
+
+function setTimeFmt(fmt) {
+  timeFmt = fmt;
+  document.getElementById('btn-24h-fmt').classList.toggle('active', fmt === '24');
+  document.getElementById('btn-12h-fmt').classList.toggle('active', fmt === '12');
+  if (activeItem) renderTable(countriesFor(activeItem));
+  rebuildChart();
+}
+
+function setTz(tz) {
+  tzMode = tz;
+  document.getElementById('btn-tct').classList.toggle('active',   tz === 'utc');
+  document.getElementById('btn-local').classList.toggle('active', tz === 'local');
+  // Re-render table times and rebuild chart ticks
+  if (activeItem) renderTable(countriesFor(activeItem));
+  rebuildChart();
+}
+
+/* ── Table ──────────────────────────────────────────── */
+const SORT_IDS = ['country','status','qty','cost','restock','dep','conf'];
+
+function sort(col) {
+  if (sortKey === col) sortDir *= -1;
+  else { sortKey = col; sortDir = 1; }
+  SORT_IDS.forEach(id => {
+    const el = document.getElementById(`si-${id}`);
+    if (el) el.textContent = '';
+  });
+  const sortEl = document.getElementById(`si-${col}`);
+  if (sortEl) sortEl.textContent = sortDir === 1 ? ' ▲' : ' ▼';
+  // Update header class
+  document.querySelectorAll('thead th').forEach(th => th.classList.remove('sorted-col'));
+  renderTable(countriesFor(activeItem));
+}
+
+function sortVal(row, col) {
+  const { c, snap, dep, stats } = row;
+  switch (col) {
+    case 'country': return c;
+    case 'qty':     return snap?.quantity ?? -1;
+    case 'cost':    return snap?.cost     ?? -1;
+    case 'conf':    return dep?.confidence ?? -1;
+    case 'dep':     return dep?.leaveInSeconds ?? 999999;
+    case 'restock': return dep?.predictedRestock ?? 9e9;
+    case 'profit': {
+      const sell = tornPrices[activeItem] ?? 0;
+      return (sell && snap?.cost) ? sell * (1 - sellCommission / 100) - snap.cost : -Infinity;
+    }
+    case 'potential': {
+      const sell = tornPrices[activeItem] ?? 0;
+      const qty  = snap?.quantity ?? 0;
+      return (sell && snap?.cost && qty) ? (sell * (1 - sellCommission / 100) - snap.cost) * Math.min(qty, travelCapacity) : -Infinity;
+    }
+    case 'status': {
+      if (!snap || snap.quantity === 0) return -1;
+      const avg = stats?.averageStartingQuantity || 0;
+      return avg ? snap.quantity / avg : snap.quantity;
+    }
+    default: return c;
+  }
+}
+
+function renderTable(cs) {
+  const tbody = document.getElementById('tbody');
+
+  let rows = cs.map(c => ({
+    c,
+    snap:  statusMap[key(c, activeItem)]?.snapshot,
+    dep:   statusMap[key(c, activeItem)]?.departure,
+    stats: statusMap[key(c, activeItem)]?.stats,
+    ts:    statusMap[key(c, activeItem)]?.ts,
+    wid:   watched.find(w => w.country === c && w.item === activeItem)?.id,
+  }));
+
+  rows.sort((a, b) => {
+    const va = sortVal(a, sortKey);
+    const vb = sortVal(b, sortKey);
+    return (typeof va === 'string' ? va.localeCompare(vb) : va - vb) * sortDir;
+  });
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr class="no-rows"><td colspan="11">No countries watched for this item.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(({ c, snap, dep, stats, ts, wid }) => {
+    const mt  = m(c);
+    const bg  = getBadge(snap, stats);
+    const dc  = depClass(dep);
+    const dt  = dep?.recommendation ?? 'Collecting data…';
+    const cn  = dep?.confidence ?? 0;
+
+    let restockHtml;
+    if (dep?.ready && dep.predictedRestock) {
+      const sigma = stats?.restockInterval?.stdDev ?? 0;
+      const rt    = dep.predictedRestock;
+      if (sigma > 60) {
+        restockHtml = `<div class="restock-main">~${fmtTime(rt)}</div>
+          <div class="restock-range">${fmtTime(rt - sigma)} – ${fmtTime(rt + sigma)}</div>`;
+      } else {
+        restockHtml = `<div class="restock-main">~${fmtTime(rt)}</div>`;
+      }
+    } else {
+      restockHtml = `<span style="color:var(--text-muted);font-size:11px">
+        ${dep?.recommendation ?? 'Collecting…'}
+      </span>`;
+    }
+
+    const sell      = tornPrices[activeItem] ?? 0;
+    const profit    = (sell && snap?.cost) ? sell * (1 - sellCommission / 100) - snap.cost : null;
+    const qty       = snap?.quantity ?? 0;
+    const potAmt    = (profit !== null && qty > 0) ? profit * Math.min(qty, travelCapacity) : null;
+    const fmtProfit = v => v === null ? '<span style="color:var(--text-muted)">—</span>'
+      : v >= 0 ? `<span class="cat-profit-pos">+$${v.toLocaleString()}</span>`
+               : `<span class="cat-profit-neg">-$${Math.abs(v).toLocaleString()}</span>`;
+
+    const depContent = dep?.ready
+      ? `${dt}${dep.leaveAt ? `<br><span style="font-size:11px;opacity:0.7">${fmtTime(dep.leaveAt)}</span>` : ''}`
+      : `<span style="font-size:11px">${dt}</span>`;
+
+    return `<tr style="--rc:${mt.color}">
+      <td>
+        <div class="flag-cell">
+          <span class="flag">${flag(mt)}</span>
+          <span class="cname">${c}</span>
+        </div>
+      </td>
+      <td><span class="badge ${bg.cls}">${bg.l}</span></td>
+      <td>${fmtNum(snap?.quantity)}</td>
+      <td>${fmtCost(snap?.cost)}</td>
+      <td>${fmtProfit(profit)}</td>
+      <td style="font-size:12px">${fmtProfit(potAmt)}</td>
+      <td>${restockHtml}</td>
+      <td class="${dc}">${depContent}</td>
+      <td>
+        <div class="conf-wrap">
+          <div class="conf-bg"><div class="conf-fill" style="width:${cn}%"></div></div>
+          <span class="conf-pct">${cn}%</span>
+        </div>
+      </td>
+      <td class="upd-cell">${fmtAgo(ts)}</td>
+      <td>${wid != null
+        ? `<button class="btn-rm" onclick="removeWatched(${wid},event)">Remove</button>`
+        : ''
+      }</td>
+    </tr>`;
+  }).join('');
+}
+
+/* ── WebSocket ──────────────────────────────────────── */
+function connectWS() {
+  const dot   = document.getElementById('ws-dot');
+  const label = document.getElementById('ws-label');
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws    = new WebSocket(`${proto}//${location.host}`);
+
+  ws.addEventListener('open', () => {
+    dot.classList.add('on');
+    label.textContent = 'live';
+  });
+  ws.addEventListener('close', () => {
+    dot.classList.remove('on');
+    label.textContent = 'offline';
+    setTimeout(connectWS, 3000);
+  });
+  ws.addEventListener('error', () => ws.close());
+
+  ws.addEventListener('message', e => {
+    const msg = JSON.parse(e.data);
+    if (msg.type !== 'update') return;
+    for (const u of msg.data) {
+      statusMap[key(u.country, u.item)] = {
+        snapshot: u.snapshot, departure: u.departure,
+        stats: u.stats, mae: u.mae, ts: msg.serverTime,
+      };
+    }
+    renderSidebar();
+    if (activeItem) renderView();
+    const lu = document.getElementById('last-upd');
+    if (lu) lu.textContent = `Updated ${fmtAgo(msg.serverTime)}`;
+  });
+}
+
+/* ── Modal ──────────────────────────────────────────── */
+let allYataItems  = [];   // full item list from /api/items
+let selectedItems = new Set();        // item names the user has tagged
+let countriesMap  = new Map();        // item name → [country entries]
+let acFocusIdx    = -1;
+
+async function openModal() {
+  document.getElementById('modal').classList.add('open');
+  selectedItems.clear();
+  countriesMap.clear();
+  document.getElementById('m-item').value = '';
+  renderTags();
+  renderPreview();
+  closeDropdown();
+  document.getElementById('m-item').focus();
+
+  if (!allYataItems.length) {
+    try {
+      const r = await fetch('/api/items');
+      allYataItems = await r.json();
+    } catch { allYataItems = []; }
+  }
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('open');
+  closeDropdown();
+}
+
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+/* ── Tags ───────────────────────────────────────────── */
+function renderTags() {
+  const container = document.getElementById('m-tags');
+  container.innerHTML = [...selectedItems].map(name =>
+    `<span class="sel-tag">
+      ${name}
+      <span class="sel-tag-rm" onmousedown="removeTag('${name.replace(/'/g, "\\'")}')">×</span>
+    </span>`
+  ).join('');
+
+  const count = document.getElementById('m-sel-count');
+  count.textContent = selectedItems.size ? `(${selectedItems.size} selected)` : '';
+
+  const inp = document.getElementById('m-item');
+  inp.placeholder = selectedItems.size ? 'Add another…' : 'Search and pick items…';
+}
+
+function removeTag(name) {
+  selectedItems.delete(name);
+  countriesMap.delete(name);
+  renderTags();
+  renderPreview();
+}
+
+/* ── Preview ────────────────────────────────────────── */
+function renderPreview() {
+  const prev    = document.getElementById('m-preview');
+  const countEl = document.getElementById('m-count');
+  const submit  = document.getElementById('m-submit');
+
+  if (!selectedItems.size) {
+    prev.innerHTML = '<span style="color:var(--text-muted);font-size:12px;padding:2px">Select one or more items above…</span>';
+    countEl.textContent  = '';
+    submit.disabled      = true;
+    submit.textContent   = 'Add All';
+    return;
+  }
+
+  // Aggregate all (country, item) pairs across all selected items
+  const already = new Set(watched.map(w => key(w.country, w.item)));
+  const allPairs = [];
+
+  for (const [itemName, entries] of countriesMap) {
+    if (entries === 'loading') continue;
+    for (const e of entries) {
+      allPairs.push({ ...e, item: itemName, dup: already.has(key(e.country, itemName)) });
+    }
+  }
+
+  const loading = [...selectedItems].some(n => countriesMap.get(n) === 'loading');
+  const fresh   = allPairs.filter(p => !p.dup);
+
+  if (loading) {
+    prev.innerHTML = '<span style="color:var(--text-muted);font-size:12px;padding:2px">Loading…</span>';
+    submit.disabled    = true;
+    submit.textContent = 'Loading…';
+    countEl.textContent = '';
+    return;
+  }
+
+  if (!allPairs.length) {
+    prev.innerHTML = '<span style="color:var(--text-muted);font-size:12px;padding:2px">No countries found for selected items</span>';
+    submit.disabled    = true;
+    submit.textContent = 'Add All';
+    countEl.textContent = '';
+    return;
+  }
+
+  // Group chips by item name
+  const byItem = new Map();
+  for (const p of allPairs) {
+    if (!byItem.has(p.item)) byItem.set(p.item, []);
+    byItem.get(p.item).push(p);
+  }
+
+  let html = '';
+  for (const [itemName, pairs] of byItem) {
+    html += `<div style="width:100%;font-size:10px;font-weight:700;letter-spacing:.6px;color:var(--text-muted);text-transform:uppercase;margin-top:4px;margin-bottom:2px">${itemName}</div>`;
+    html += pairs.map(p => {
+      const mt = m(p.country);
+      return `<div class="chip" style="${p.dup ? 'opacity:.45' : ''}">
+        ${flag(mt)} ${p.country}
+        <span class="chip-qty">${p.quantity}</span>
+        ${p.dup ? '<span style="color:var(--text-muted);font-size:10px">(watching)</span>' : ''}
+      </div>`;
+    }).join('');
+  }
+  prev.innerHTML = html;
+
+  countEl.textContent  = `(${fresh.length} new)`;
+  submit.disabled      = fresh.length === 0;
+  submit.textContent   = fresh.length > 0
+    ? `Add ${fresh.length} combination${fresh.length === 1 ? '' : 's'}`
+    : 'Already watching all';
+}
+
+/* ── Autocomplete dropdown ───────────────────────────── */
+function closeDropdown() {
+  document.getElementById('m-dropdown').style.display = 'none';
+  document.getElementById('m-hint').style.display = 'none';
+  acFocusIdx = -1;
+}
+
+function renderDropdown(query) {
+  const dd = document.getElementById('m-dropdown');
+  const q  = query.toLowerCase().trim();
+  if (!q) { dd.style.display = 'none'; return; }
+
+  const watchedNames = new Set(watched.map(w => w.item.toLowerCase()));
+  const matches = allYataItems
+    .filter(name => name.toLowerCase().includes(q)
+      && !selectedItems.has(name)
+      && !watchedNames.has(name.toLowerCase()))
+    .slice(0, 40);
+
+  if (!matches.length) {
+    dd.innerHTML = `<div class="ac-empty">No items match "${query}"</div>`;
+    dd.style.display = 'block';
+    acFocusIdx = -1;
+    return;
+  }
+
+  const hl = name => {
+    const idx = name.toLowerCase().indexOf(q);
+    if (idx === -1) return name;
+    return name.slice(0, idx)
+      + `<mark>${name.slice(idx, idx + q.length)}</mark>`
+      + name.slice(idx + q.length);
+  };
+
+  dd.innerHTML = matches.map(name =>
+    `<div class="ac-item" onmousedown="pickItem('${name.replace(/'/g, "\\'")}', event)">${hl(name)}</div>`
+  ).join('');
+  dd.style.display = 'block';
+  document.getElementById('m-hint').style.display = 'block';
+  acFocusIdx = -1;
+}
+
+async function pickItem(name, event) {
+  event.preventDefault(); // prevent input blur so dropdown can stay open
+  if (selectedItems.has(name)) return;
+  selectedItems.add(name);
+  countriesMap.set(name, 'loading');
+
+  const multi = event.ctrlKey || event.metaKey;
+  if (multi) {
+    renderDropdown(document.getElementById('m-item').value.trim());
+    document.getElementById('m-item').focus();
+  } else {
+    document.getElementById('m-item').value = '';
+    closeDropdown();
+  }
+  renderTags();
+  renderPreview();
+
+  // Fetch countries for this item
+  try {
+    const r = await fetch(`/api/countries-for-item?item=${encodeURIComponent(name)}`);
+    const data = r.ok ? await r.json() : [];
+    countriesMap.set(name, data);
+  } catch {
+    countriesMap.set(name, []);
+  }
+  renderPreview();
+}
+
+// Keyboard nav
+document.getElementById('m-item').addEventListener('keydown', e => {
+  const dd    = document.getElementById('m-dropdown');
+  const items = dd.querySelectorAll('.ac-item');
+  if (dd.style.display === 'none' || !items.length) {
+    if (e.key === 'Backspace' && !e.target.value && selectedItems.size) {
+      const last = [...selectedItems].at(-1);
+      if (last) removeTag(last);
+    }
+    return;
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    acFocusIdx = Math.min(acFocusIdx + 1, items.length - 1);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    acFocusIdx = Math.max(acFocusIdx - 1, 0);
+  } else if (e.key === 'Enter' && acFocusIdx >= 0) {
+    e.preventDefault();
+    items[acFocusIdx]?.dispatchEvent(new MouseEvent('mousedown'));
+    return;
+  } else if (e.key === 'Escape') {
+    closeDropdown(); return;
+  } else { return; }
+  items.forEach((el, i) => el.classList.toggle('focused', i === acFocusIdx));
+  items[acFocusIdx]?.scrollIntoView({ block: 'nearest' });
+});
+
+document.getElementById('m-item').addEventListener('blur', () => {
+  setTimeout(closeDropdown, 150);
+});
+
+document.getElementById('m-item').addEventListener('input', e => {
+  renderDropdown(e.target.value.trim());
+});
+
+function resetPreview() {
+  selectedItems.clear();
+  countriesMap.clear();
+  renderTags();
+  renderPreview();
+}
+
+async function submitAdd() {
+  const already = new Set(watched.map(w => key(w.country, w.item)));
+  const toAdd   = [];
+  for (const [itemName, entries] of countriesMap) {
+    if (!Array.isArray(entries)) continue;
+    for (const e of entries) {
+      if (!already.has(key(e.country, itemName))) toAdd.push({ country: e.country, item: itemName });
+    }
+  }
+  if (!toAdd.length) return;
+
+  const btn = document.getElementById('m-submit');
+  btn.disabled = true; btn.textContent = 'Adding…';
+
+  for (const { country, item } of toAdd) {
+    try {
+      await fetch('/api/watched', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ country, item }),
+      });
+    } catch {}
+  }
+  closeModal();
+  await loadAll();
+}
+
+/* ── Remove ─────────────────────────────────────────── */
+async function removeWatched(id, e) {
+  e.stopPropagation();
+  if (!confirm('Remove this country from monitoring?')) return;
+  await fetch(`/api/watched/${id}`, { method: 'DELETE' });
+  await loadAll();
+}
+
+/* ── Settings modal ─────────────────────────────────── */
+function openSettings() {
+  fetch('/api/settings')
+    .then(r => r.json())
+    .then(s => {
+      document.getElementById('s-retention').value   = s.retentionDays;
+      document.getElementById('s-capacity').value    = s.travelCapacity ?? 28;
+      document.getElementById('s-commission').value  = s.sellCommission ?? 5;
+      document.getElementById('s-apikey').value = '';
+      document.getElementById('s-apikey').placeholder = s.apiKey
+        ? 'Key saved — enter new key to replace'
+        : 'Enter your Torn API key…';
+      document.getElementById('settings-modal').classList.add('open');
+    })
+    .catch(() => alert('Could not load settings'));
+}
+
+function closeSettings() {
+  document.getElementById('settings-modal').classList.remove('open');
+}
+
+/* ── Logs modal ─────────────────────────────────────────── */
+let _logsInterval = null;
+
+function openLogs() {
+  document.getElementById('logs-modal').classList.add('open');
+  refreshLogs();
+  _logsInterval = setInterval(refreshLogs, 5000);
+}
+
+function closeLogs() {
+  document.getElementById('logs-modal').classList.remove('open');
+  clearInterval(_logsInterval);
+  _logsInterval = null;
+}
+
+document.getElementById('logs-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeLogs();
+});
+
+async function refreshLogs() {
+  try {
+    const entries = await fetch('/api/logs').then(r => r.json());
+    const out     = document.getElementById('logs-output');
+    const count   = document.getElementById('logs-count');
+    count.textContent = `${entries.length} / 1000 lines`;
+
+    const COLORS = { OK: '#4caf87', WARN: '#e6b800', ERROR: '#e05c5c', INFO: '' };
+    out.innerHTML = entries.map(e => {
+      const t   = new Date(e.ts).toISOString().replace('T', ' ').slice(0, 19);
+      const col = COLORS[e.level] ?? '';
+      const levelPad = e.level.padEnd(5);
+      const line = `[${t}] [${levelPad}] ${e.msg}`.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+      return col ? `<span style="color:${col}">${line}</span>` : line;
+    }).join('\n');
+
+    if (document.getElementById('logs-autoscroll').checked) {
+      out.scrollTop = out.scrollHeight;
+    }
+  } catch(e) {}
+}
+
+document.getElementById('settings-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeSettings();
+});
+
+function setRetentionPreset(days) {
+  document.getElementById('s-retention').value = days;
+}
+
+async function saveSettings() {
+  const days = Number(document.getElementById('s-retention').value);
+  if (!days || days < 1 || days > 90) {
+    alert('Retention must be between 1 and 90 days');
+    return;
+  }
+  const apiKey  = document.getElementById('s-apikey').value.trim();
+  const cap     = Number(document.getElementById('s-capacity').value);
+  const com     = Number(document.getElementById('s-commission').value);
+  if (!cap || cap < 1 || cap > 999) { alert('Travel capacity must be 1–999'); return; }
+  if (isNaN(com) || com < 0 || com > 100) { alert('Commission must be 0–100'); return; }
+  try {
+    const r = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ retentionDays: days, travelCapacity: cap, sellCommission: com, ...(apiKey ? { apiKey } : {}) }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    travelCapacity = cap;
+    sellCommission = com;
+    closeSettings();
+  } catch (e) {
+    alert('Failed to save: ' + e.message);
+  }
+}
+
+/* ── Boot ───────────────────────────────────────────── */
+async function loadAll() {
+  const [w, s, cfg] = await Promise.all([
+    fetch('/api/watched').then(r => r.json()),
+    fetch('/api/status').then(r => r.json()),
+    fetch('/api/settings').then(r => r.json()).catch(() => ({})),
+  ]);
+  if (cfg.travelCapacity)  travelCapacity = cfg.travelCapacity;
+  if (cfg.sellCommission != null) sellCommission = cfg.sellCommission;
+  watched = w;
+  for (const u of s) {
+    statusMap[key(u.country, u.item)] = {
+      snapshot: u.snapshot, departure: u.departure,
+      stats: u.stats, mae: u.mae, ts: u.snapshot?.ts ?? null,
+    };
+  }
+
+  const all = allItems();
+  if (!activeItem || !all.includes(activeItem)) activeItem = all[0] ?? null;
+
+  if (activeItem) {
+    const cs     = countriesFor(activeItem);
+    const kept   = cs.filter(c => activeSet.has(c));
+    activeSet    = kept.length ? new Set(kept) : new Set(cs);
+  }
+
+  renderSidebar();
+
+  if (!all.length) {
+    document.getElementById('empty-state').style.display = 'flex';
+    document.getElementById('item-view').style.display   = 'none';
+  } else {
+    renderView();
+    fetchHistory();
+  }
+}
+
+// Set initial sort indicator
+const initSI = document.getElementById(`si-${sortKey}`);
+if (initSI) initSI.textContent = ' ▲';
+
+document.getElementById('btn-add').addEventListener('click', openModal);
+document.getElementById('btn-catalog').addEventListener('click', openCatalog);
+document.getElementById('btn-pick').addEventListener('click', openPick);
+
+/* ── BEST PICKS (inside catalog) ────────────────────────── */
+let recFilter = 'all';
+
+function setRecFilter(f) {
+  recFilter = f;
+  document.querySelectorAll('#rec-filters .cat-tab').forEach((b, i) =>
+    b.classList.toggle('active', ['all','watched'][i] === f));
+  renderRecommend();
+}
+
+function stockSurvival(qty, travelMins, stats, dep) {
+  // Watched item with departure confidence → trust the prediction engine
+  if (dep?.ready && dep.confidence >= 0) {
+    const conf      = dep.confidence / 100;
+    const stockOk   = qty >= travelCapacity * 2 ? 1.0 : qty >= travelCapacity ? 0.75 : 0.4;
+    return Math.min(conf * stockOk + 0.05, 0.99);
+  }
+  // Watched item with historical stats → use position in depletion cycle
+  if (stats?.averageStartingQuantity > 0) {
+    const cyclePos  = Math.min(qty / stats.averageStartingQuantity, 1.0); // 1 = fresh restock
+    const timeLoss  = (travelMins / 60) * 0.12; // lose ~12% survival per hour of travel
+    return Math.max(Math.min(cyclePos - timeLoss, 0.97), 0.03);
+  }
+  // Unmonitored item — use stock-to-travelTime ratio as proxy
+  // Assume high-demand items sell ~3–8 units/min
+  const ratio = qty / travelMins;
+  if (ratio > 10) return 0.92;
+  if (ratio > 5)  return 0.82;
+  if (ratio > 2)  return 0.66;
+  if (ratio > 1)  return 0.50;
+  if (ratio > 0.3) return 0.30;
+  return 0.10;
+}
+
+function buildCandidates() {
+  const watchedSet = new Set(watched.map(w => `${w.country}\x00${w.item.toLowerCase()}`));
+  const out = [];
+  for (const country of (catalogData?.countries ?? [])) {
+    for (const item of country.items) {
+      if ((item.quantity ?? 0) <= 0) continue;
+      const sell   = tornPrices[item.name] ?? 0;
+      const profit = sell && item.cost ? sell * (1 - sellCommission / 100) - item.cost : null;
+      if (!profit || profit <= 0) continue;
+      const isWatched  = watchedSet.has(`${country.name}\x00${item.name.toLowerCase()}`);
+      const statusEntry = isWatched ? statusMap[key(country.name, item.name)] : null;
+      const dep        = statusEntry?.departure ?? null;
+      const stats      = statusEntry?.stats ?? null;
+
+      // Skip watched items still collecting data — no reliable prediction yet
+      if (isWatched && !dep?.ready) continue;
+
+      const ppm        = profit / country.travelMinutes;
+      const survival   = stockSurvival(item.quantity, country.travelMinutes, stats, dep);
+      const score      = (() => {
+        switch (pickPriority) {
+          case 'time':   return (profit / (country.travelMinutes * country.travelMinutes)) * survival * survival;
+          case 'profit': return profit * survival * survival;
+          case 'chance': return ppm * Math.pow(survival, 3);
+          default:       return ppm * survival * survival;
+        }
+      })();
+      const take       = Math.min(item.quantity, travelCapacity);
+      const potential  = profit * take;
+      const bring      = item.cost * take;
+      out.push({ item: item.name, country: country.name, travelMinutes: country.travelMinutes,
+        qty: item.quantity, buy: item.cost, sell, profit, ppm, survival, score, potential, bring, isWatched, dep });
+    }
+  }
+  return out.sort((a, b) => b.score - a.score);
+}
+
+function renderRecommend() {
+  const body      = document.getElementById('cat-body');
+  const stat      = document.getElementById('cat-stat');
+  const hasPrices = Object.keys(tornPrices).length > 0;
+
+  if (!hasPrices) {
+    body.innerHTML = '<div class="cat-empty">Add your Torn API key in ⚙ Settings to enable recommendations.</div>';
+    stat.textContent = ''; return;
+  }
+  if (!catalogData?.countries) {
+    body.innerHTML = '<div class="cat-empty">Could not load catalog data.</div>';
+    stat.textContent = ''; return;
+  }
+
+  const all      = buildCandidates();
+  const filtered = all.filter(r => r.survival >= 0.25);
+  const pool     = (filtered.length > 0 ? filtered : all); // fall back if everything is low-chance
+
+  // Render category pills for picks view — use full catalog so all categories are always shown
+  const _allPickNames = (catalogData?.countries ?? []).flatMap(c => c.items.map(i => i.name));
+  renderCatPills('picks-cat-tabs', picksCatFilter, 'setPicksCatFilter', _allPickNames);
+
+  const list     = pool
+    .filter(r => recFilter === 'watched' ? r.isWatched : true)
+    .filter(r => !picksCatFilter || tornCategories[r.item] === picksCatFilter);
+  const top      = list.slice(0, 100);
+  const lowChkWarn = filtered.length === 0 && all.length > 0;
+
+  if (!top.length) {
+    body.innerHTML = '<div class="cat-empty">No profitable in-stock items found.</div>';
+    stat.textContent = ''; return;
+  }
+
+  const thead = `<thead><tr>
+    <th style="padding-left:28px;width:40px">#</th>
+    <th>Item</th><th>Country</th>
+    <th class="num">Stock</th><th class="num">Buy</th><th class="num">Sell</th>
+    <th class="num cat-sorted">Score ↓</th><th class="num">Profit/min</th><th class="num">Chance</th>
+    <th class="num">Profit/unit</th><th class="num">Bring</th>
+    <th>Departure</th><th class="num">Potential</th><th></th>
+  </tr></thead>`;
+
+  const tbody = top.map(({ item, country, travelMinutes, qty, buy, sell, profit, ppm, survival, score, potential, bring, isWatched, dep }, idx) => {
+    const mt        = m(country);
+    const rankCls   = idx === 0 ? 'gold' : idx === 1 ? 'silver' : idx === 2 ? 'bronze' : '';
+    const bCls      = qty > 100 ? 'b-high' : qty > 20 ? 'b-med' : 'b-low';
+    const bLbl      = qty > 100 ? 'HIGH' : qty > 20 ? 'MED' : 'LOW';
+    const pct       = Math.round(survival * 100);
+    const chanceCls = pct >= 75 ? 'cat-profit-pos' : pct >= 50 ? 'dep-soon' : 'cat-profit-neg';
+    let depCell;
+    if (dep?.ready) {
+      const cls = dep.recommendation?.toLowerCase().includes('now') ? 'cat-profit-pos' : 'dep-soon';
+      depCell = `<div class="${cls}" style="font-weight:700;font-size:12px">${dep.recommendation}</div>
+        ${dep.leaveAt ? `<div style="font-size:11px;color:var(--text-muted)">${fmtTime(dep.leaveAt)}</div>` : ''}`;
+    } else if (isWatched) {
+      depCell = `<span style="color:var(--text-muted);font-size:11px">Collecting data…</span>`;
+    } else {
+      depCell = `<span style="color:var(--text-muted);font-size:11px">${travelMinutes} min travel</span>`;
+    }
+    const watchBtn = isWatched
+      ? `<button class="btn-watch watching" disabled>Watching</button>`
+      : `<button class="btn-watch" onclick="recWatch('${country.replace(/'/g,"\\'")}','${item.replace(/'/g,"\\'")}',this)">Watch</button>`;
+    return `<tr>
+      <td style="padding-left:28px"><span class="rec-rank ${rankCls}">${idx+1}</span></td>
+      <td><span class="cat-item-name">${item}</span></td>
+      <td><span class="cat-country-tag">${flag(mt)} ${country}</span></td>
+      <td class="num"><span class="badge ${bCls}">${bLbl}</span><br><span style="font-size:11px;color:var(--text-muted)">${qty.toLocaleString()}</span></td>
+      <td class="num cat-buy">$${buy.toLocaleString()}</td>
+      <td class="num cat-sell">$${sell.toLocaleString()}</td>
+      <td class="num cat-profit-pos" style="font-size:11px">+$${score.toFixed(0)}/min</td>
+      <td class="num cat-profit-pos">+$${ppm.toFixed(0)}/min</td>
+      <td class="num"><span class="${chanceCls}" style="font-weight:700">${pct}%</span></td>
+      <td class="num cat-profit-pos">+$${profit.toLocaleString()}</td>
+      <td class="num" style="color:var(--yellow);font-weight:700">$${bring.toLocaleString()}</td>
+      <td>${depCell}</td>
+      <td class="num cat-profit-pos" style="font-size:11px">+$${potential.toLocaleString()}</td>
+      <td>${watchBtn}</td>
+    </tr>`;
+  }).join('');
+
+  body.innerHTML = `<table class="cat-table"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
+  const t = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', ...(tzMode==='utc'?{timeZone:'UTC'}:{}), hour12: timeFmt==='12' });
+  stat.innerHTML = `${list.length} items · top ${top.length} shown · ${t} ${tzMode==='utc'?'TCT':'local'}`
+    + (lowChkWarn ? ` <span style="color:var(--yellow);font-weight:700">⚠ All items have low stock — showing anyway</span>` : '');
+}
+
+async function recWatch(country, item, btn) {
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    await fetch('/api/watched', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ country, item }) });
+    btn.textContent = 'Watching'; btn.classList.add('watching');
+    await loadAll(); renderRecommend();
+  } catch(e) { btn.disabled = false; btn.textContent = 'Watch'; }
+}
+
+/* ── CATALOG VIEW SWITCH ────────────────────────────────── */
+let catView = 'catalog';
+
+function switchCatView(v) {
+  catView = v;
+  document.getElementById('cat-view-catalog').classList.toggle('active', v === 'catalog');
+  document.getElementById('cat-view-picks').classList.toggle('active', v === 'bestpicks');
+  document.getElementById('cat-catalog-controls').style.display = v === 'catalog' ? '' : 'none';
+  document.getElementById('cat-picks-controls').style.display   = v === 'bestpicks' ? '' : 'none';
+  document.getElementById('cat-refresh-btn').style.display      = v === 'bestpicks' ? '' : 'none';
+  document.getElementById('cat-title').textContent = v === 'catalog' ? 'Item Catalog' : '⚡ Best Picks';
+  if (v === 'catalog') filterCatalog();
+  else { document.getElementById('cat-body').innerHTML = '<div class="cat-empty">Loading…</div>'; renderRecommend(); }
+}
+
+/* ── SINGLE BEST PICK popup ─────────────────────────────── */
+async function openPick() {
+  document.getElementById('pick-modal').classList.add('open');
+  document.getElementById('pick-content').innerHTML =
+    '<div style="text-align:center;padding:28px;color:var(--text-muted)">Finding best pick…</div>';
+  document.getElementById('pick-footer').innerHTML =
+    '<button class="btn btn-ghost" onclick="closePick()">Close</button>';
+
+  const fetches = [];
+  if (!catalogData?.countries) fetches.push(fetch('/api/catalog').then(r=>r.json()).then(d=>{catalogData=d;}).catch(()=>{}));
+  if (!Object.keys(tornPrices).length) fetches.push(fetch('/api/torn-prices').then(r=>r.ok?r.json():{}).then(d=>{tornPrices=d;}).catch(()=>{}));
+  if (fetches.length) await Promise.all(fetches);
+
+  renderPick();
+}
+
+function closePick() {
+  document.getElementById('pick-modal').classList.remove('open');
+  pickModalCatFilter.clear();
+}
+
+function renderPickCatPills() {
+  // Use full catalog so all categories appear even when none are profitable right now
+  const allNames = (catalogData?.countries ?? []).flatMap(c => c.items.map(i => i.name));
+  const allCats  = [...new Set(allNames.map(n => tornCategories[n]).filter(Boolean))].sort();
+  const wrap       = document.getElementById('pick-cat-filter');
+  const pills      = document.getElementById('pick-cat-pills');
+  if (!wrap || !pills || !allCats.length) { if (wrap) wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  pills.innerHTML = allCats.map(cat => {
+    const on = pickModalCatFilter.has(cat);
+    return `<button
+      class="sf-chip${on ? ' active' : ''}"
+      onclick="togglePickCat('${cat.replace(/'/g,"\\'")}')"
+      style="font-size:11px"
+    >${cat}</button>`;
+  }).join('');
+}
+
+function togglePickCat(cat) {
+  if (pickModalCatFilter.has(cat)) pickModalCatFilter.delete(cat);
+  else pickModalCatFilter.add(cat);
+  renderPickCatPills();
+  renderPick();
+}
+
+function renderPick() {
+  const content   = document.getElementById('pick-content');
+  const footer    = document.getElementById('pick-footer');
+  const hasPrices = Object.keys(tornPrices).length > 0;
+
+  renderPickCatPills();
+
+  if (!hasPrices) {
+    content.innerHTML = '<div style="text-align:center;padding:28px;color:var(--text-muted)">Add your Torn API key in ⚙ Settings.</div>';
+    footer.innerHTML  = '<button class="btn btn-ghost" onclick="closePick()">Close</button>';
+    return;
+  }
+
+  const candidates = buildCandidates();
+  const pool = pickModalCatFilter.size > 0
+    ? candidates.filter(r => pickModalCatFilter.has(tornCategories[r.item] ?? ''))
+    : candidates;
+  const best = pool.find(r => r.survival >= 0.25) ?? pool[0] ?? null;
+
+  if (!best) {
+    const msg = pickModalCatFilter.size > 0
+      ? `No profitable items found for selected categories (${[...pickModalCatFilter].join(', ')}).`
+      : 'No profitable in-stock items found right now.';
+    content.innerHTML = `<div style="text-align:center;padding:28px;color:var(--text-muted)">${msg}</div>`;
+    footer.innerHTML  = '<button class="btn btn-ghost" onclick="closePick()">Close</button>';
+    return;
+  }
+
+  const mt        = m(best.country);
+  const bCls      = best.qty > 100 ? 'b-high' : best.qty > 20 ? 'b-med' : 'b-low';
+  const bLbl      = best.qty > 100 ? 'HIGH' : best.qty > 20 ? 'MED' : 'LOW';
+  const pct       = Math.round((best.survival ?? 0) * 100);
+  const chanceCls = pct >= 75 ? 'cat-profit-pos' : pct >= 50 ? 'dep-soon' : 'cat-profit-neg';
+
+  let depHtml;
+  if (best.dep?.ready) {
+    const cls = best.dep.recommendation?.toLowerCase().includes('now') ? 'cat-profit-pos' : 'dep-soon';
+    depHtml = `<div class="${cls}" style="font-weight:800;font-size:15px">${best.dep.recommendation}</div>
+      ${best.dep.leaveAt ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${fmtTime(best.dep.leaveAt)}</div>` : ''}`;
+  } else if (best.isWatched) {
+    depHtml = `<div style="color:var(--text-muted);font-size:13px">Collecting data…</div>`;
+  } else {
+    depHtml = `<div style="color:var(--text-muted);font-size:13px">~${best.travelMinutes} min one way</div>`;
+  }
+
+  const stat = v => `<div style="background:var(--surface2);border-radius:8px;padding:10px;text-align:center">
+    <div style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">${v.label}</div>
+    <div class="${v.cls ?? 'cat-profit-pos'}" style="font-size:${v.size ?? 15}px;font-weight:800">${v.val}</div>
+  </div>`;
+
+  content.innerHTML = `
+    <h2 style="margin-bottom:16px">🏆 Best Pick Right Now</h2>
+    <div style="text-align:center;margin-bottom:18px">
+      <div style="font-size:42px;margin-bottom:6px">${flag(mt)}</div>
+      <div style="font-size:20px;font-weight:800;margin-bottom:2px">${best.item}</div>
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:10px">${best.country} · ${best.travelMinutes} min travel</div>
+      <span class="badge ${bCls}">${bLbl}</span> <span style="font-size:13px;font-weight:600;color:var(--text-dim)">${best.qty.toLocaleString()} in stock</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+      ${stat({label:'Profit/min', val:`+$${best.ppm.toFixed(0)}/min`})}
+      ${stat({label:'Profit/unit', val:`+$${best.profit.toLocaleString()}`})}
+      ${stat({label:'Potential', val:`+$${best.potential.toLocaleString()}`, size:12})}
+      ${stat({label:'In-stock chance', val:`${pct}%`, cls: chanceCls})}
+    </div>
+    <div style="background:var(--surface2);border-radius:8px;padding:10px;text-align:center;margin-bottom:8px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px">Cash to bring</div>
+      <div style="font-size:16px;font-weight:800;color:var(--yellow)">$${best.bring.toLocaleString()}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:2px">to buy ${Math.min(best.qty, travelCapacity)} × $${best.buy.toLocaleString()}</div>
+    </div>
+    <div style="background:var(--surface2);border-radius:8px;padding:12px;text-align:center">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px">When to depart</div>
+      ${depHtml}
+    </div>`;
+
+  const watchBtn = best.isWatched
+    ? `<button class="btn btn-ghost" disabled>Already Watching</button>`
+    : `<button class="btn btn-primary" onclick="pickWatch('${best.country.replace(/'/g,"\\'")}','${best.item.replace(/'/g,"\\'")}',this)">Watch This</button>`;
+
+  footer.innerHTML = `
+    <button class="btn btn-ghost" onclick="closePick()">Close</button>
+    <button class="btn btn-ghost" onclick="closePick();openCatalog();switchCatView('bestpicks')">See All Picks</button>
+    ${watchBtn}`;
+}
+
+async function pickWatch(country, item, btn) {
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    await fetch('/api/watched', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ country, item }) });
+    btn.textContent = 'Watching!'; await loadAll(); renderPick();
+  } catch(e) { btn.disabled = false; btn.textContent = 'Watch This'; }
+}
+
+async function loadTornPrices() {
+  try {
+    const [pr, cr] = await Promise.all([
+      fetch('/api/torn-prices'),
+      fetch('/api/torn-categories'),
+    ]);
+    if (pr.ok) tornPrices = await pr.json();
+    if (cr.ok) tornCategories = await cr.json();
+    renderTable(countriesFor(activeItem));
+    renderSidebar();
+  } catch(e) {}
+}
+
+/* ── CATALOG ────────────────────────────────────────────── */
+let catalogData    = null;
+let tornPrices     = {};
+let catFilter      = null;
+let catSortMode    = 'profit';
+let catSortDir     = 'desc';
+let travelCapacity   = 28;
+let sellCommission   = 5;
+let tornCategories    = {};       // { itemName: category }
+let sidebarCatFilter  = null;    // sidebar category filter
+let catalogCatFilter  = null;    // catalog view category filter
+let picksCatFilter    = null;    // best picks category filter
+let pickModalCatFilter = new Set(); // multi-select for 🏆 pick card (empty = all)
+let pickPriority = 'balanced';      // balanced | time | profit | chance
+
+async function openCatalog() {
+  document.getElementById('catalog-modal').classList.add('open');
+  document.getElementById('cat-search').value = '';
+  catFilter        = null;
+  catalogCatFilter = null;
+  picksCatFilter   = null;
+  catSortMode      = 'profit';
+  catSortDir       = 'desc';
+  // Sync priority button active states
+  document.querySelectorAll('.priority-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.p === pickPriority));
+  // reset to catalog view
+  catView = 'catalog';
+  document.getElementById('cat-view-catalog').classList.add('active');
+  document.getElementById('cat-view-picks').classList.remove('active');
+  document.getElementById('cat-catalog-controls').style.display = '';
+  document.getElementById('cat-picks-controls').style.display   = 'none';
+  document.getElementById('cat-refresh-btn').style.display      = 'none';
+  document.getElementById('cat-title').textContent = 'Item Catalog';
+  document.getElementById('cat-body').innerHTML = '<div class="cat-empty">Loading…</div>';
+  document.getElementById('cat-stat').textContent = '';
+  try {
+    const [catRes, priceRes] = await Promise.all([
+      fetch('/api/catalog'),
+      fetch('/api/torn-prices'),
+    ]);
+    if (!catRes.ok) throw new Error(`Catalog: server returned ${catRes.status}`);
+    catalogData = await catRes.json();
+    if (!Array.isArray(catalogData.countries)) throw new Error('Unexpected catalog shape');
+    if (priceRes.ok) {
+      tornPrices = await priceRes.json();
+    } else {
+      tornPrices = {};
+    }
+    renderCatTabs();
+    filterCatalog();
+  } catch(e) {
+    console.error('[catalog]', e);
+    document.getElementById('cat-body').innerHTML =
+      `<div class="cat-empty">Failed to load catalog.<br><span style="font-size:11px;opacity:.6">${e.message}</span></div>`;
+  }
+}
+
+function closeCatalog() {
+  document.getElementById('catalog-modal').classList.remove('open');
+}
+
+function renderCatTabs() {
+  if (!catalogData) return;
+  const tabs = document.getElementById('cat-tabs');
+  const all = `<button class="cat-tab${catFilter === null ? ' active' : ''}" onclick="setCatFilter(null)">All</button>`;
+  const countryTabs = catalogData.countries.map(c => {
+    const mt = m(c.name);
+    const active = catFilter === c.name ? ' active' : '';
+    return `<button class="cat-tab${active}" onclick="setCatFilter('${c.name.replace(/'/g, "\\'")}')">${flag(mt)} ${c.name}</button>`;
+  }).join('');
+  tabs.innerHTML = all + countryTabs;
+}
+
+function setCatalogCatFilter(cat) {
+  catalogCatFilter = cat;
+  filterCatalog();
+}
+
+function setPicksCatFilter(cat) {
+  picksCatFilter = cat;
+  renderRecommend();
+}
+
+function setPriority(p) {
+  pickPriority = p;
+  document.querySelectorAll('.priority-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.p === p));
+  if (document.getElementById('pick-modal').classList.contains('open')) renderPick();
+  if (catView === 'bestpicks') renderRecommend();
+}
+
+function setCatFilter(country) {
+  catFilter = country;
+  renderCatTabs();
+  filterCatalog();
+}
+
+function profitOf(item) {
+  const sell = tornPrices[item.name] ?? 0;
+  if (!sell || !item.cost) return null;
+  return sell * (1 - sellCommission / 100) - item.cost;
+}
+
+function filterCatalog() {
+  if (!catalogData?.countries) return;
+  const q = document.getElementById('cat-search').value.trim().toLowerCase();
+  const hasPrices = Object.keys(tornPrices).length > 0;
+
+  const allRows = [];
+  const watchedSet = new Set(watched.map(w => `${w.country}\x00${w.item.toLowerCase()}`));
+  const srcCountries = catFilter
+    ? catalogData.countries.filter(c => c.name === catFilter)
+    : catalogData.countries;
+
+  // Render category pills for catalog view
+  const allCatItems = srcCountries.flatMap(c => c.items.map(i => i.name));
+  renderCatPills('cat-cat-tabs', catalogCatFilter, 'setCatalogCatFilter', allCatItems);
+
+  for (const c of srcCountries) {
+    let items = q ? c.items.filter(i => i.name.toLowerCase().includes(q)) : c.items;
+    if (catalogCatFilter) items = items.filter(i => tornCategories[i.name] === catalogCatFilter);
+    for (const i of items) allRows.push({ country: c.name, travelMinutes: c.travelMinutes ?? 0, item: i });
+  }
+
+  const dir = catSortDir === 'asc' ? 1 : -1;
+  const numSort = (fn) => (a, b) => {
+    const va = fn(a) ?? (dir > 0 ? Infinity : -Infinity);
+    const vb = fn(b) ?? (dir > 0 ? Infinity : -Infinity);
+    return (va - vb) * dir;
+  };
+  const strSort = (fn) => (a, b) => fn(a).localeCompare(fn(b)) * dir;
+
+  const sorters = {
+    name:      strSort(r => r.item.name),
+    country:   strSort(r => r.country),
+    stock:     numSort(r => r.item.quantity ?? 0),
+    buy:       numSort(r => r.item.cost ?? 0),
+    sell:      numSort(r => tornPrices[r.item.name] ?? null),
+    profit:    numSort(r => profitOf(r.item)),
+    potential:    numSort(r => { const p = profitOf(r.item); const q = r.item.quantity ?? 0; return p !== null && q > 0 ? p * Math.min(q, travelCapacity) : null; }),
+    profitpermin: numSort(r => { const p = profitOf(r.item); return (p !== null && r.travelMinutes) ? p / r.travelMinutes : null; }),
+  };
+  allRows.sort(sorters[catSortMode] ?? sorters.profit);
+
+  const body = document.getElementById('cat-body');
+  if (!allRows.length) {
+    body.innerHTML = `<div class="cat-empty">No items found${q ? ` matching "${q}"` : ''}.</div>`;
+  } else {
+    const ind = (col) => catSortMode === col ? (catSortDir === 'asc' ? ' ↑' : ' ↓') : '';
+    const th = (col, label, cls = '') =>
+      `<th class="${cls}${catSortMode === col ? ' cat-sorted' : ''}" onclick="setCatSort('${col}')">${label}${ind(col)}</th>`;
+
+    const thead = `<thead><tr>
+      ${th('name','Item')}
+      ${th('country','Country')}
+      ${th('stock','Stock','num')}
+      ${th('buy','Buy','num')}
+      ${hasPrices ? th('sell','Sell','num') + th('profit','Profit/unit','num') + th('profitpermin','Profit/min','num') + th('potential','Potential','num') : ''}
+      <th></th>
+    </tr></thead>`;
+
+    const tbodyRows = allRows.map(({ country, travelMinutes, item: i }) => {
+      const mt = m(country);
+      const isWatched = watchedSet.has(`${country}\x00${i.name.toLowerCase()}`);
+      const qty = i.quantity ?? 0;
+      const badgeCls = qty > 100 ? 'b-high' : qty > 20 ? 'b-med' : qty > 0 ? 'b-low' : 'b-empty';
+      const badgeLbl = qty > 100 ? 'HIGH' : qty > 20 ? 'MED' : qty > 0 ? 'LOW' : 'EMPTY';
+      const buy = i.cost ? `$${i.cost.toLocaleString()}` : '—';
+
+      let priceCols = '';
+      if (hasPrices) {
+        const sell = tornPrices[i.name] ?? 0;
+        const profit = profitOf(i);
+        const sellStr = sell ? `$${sell.toLocaleString()}` : '—';
+        let profitStr, profitCls;
+        if (profit === null) { profitStr = '—'; profitCls = 'cat-profit-na'; }
+        else if (profit >= 0) { profitStr = `+$${profit.toLocaleString()}`; profitCls = 'cat-profit-pos'; }
+        else { profitStr = `-$${Math.abs(profit).toLocaleString()}`; profitCls = 'cat-profit-neg'; }
+        const potential   = profit !== null && qty > 0 ? profit * Math.min(qty, travelCapacity) : null;
+        const potStr      = potential === null ? '—' : potential >= 0 ? `+$${potential.toLocaleString()}` : `-$${Math.abs(potential).toLocaleString()}`;
+        const potCls      = potential === null ? 'cat-profit-na' : potential >= 0 ? 'cat-profit-pos' : 'cat-profit-neg';
+        const ppm         = (profit !== null && travelMinutes) ? profit / travelMinutes : null;
+        const ppmVal      = ppm === null ? '—' : (ppm >= 0 ? `+$${ppm.toFixed(0)}/min` : `-$${Math.abs(ppm).toFixed(0)}/min`);
+        const ppmCls      = ppm === null ? 'cat-profit-na' : ppm >= 0 ? 'cat-profit-pos' : 'cat-profit-neg';
+        priceCols = `<td class="num cat-sell">${sellStr}</td>
+          <td class="num ${profitCls}">${profitStr}</td>
+          <td class="num ${ppmCls}" style="font-size:12px">${ppmVal}</td>
+          <td class="num ${potCls}" style="font-size:11px">${potStr}</td>`;
+      }
+
+      const watchBtn = isWatched
+        ? `<button class="btn-watch watching" disabled>Watching</button>`
+        : `<button class="btn-watch" onclick="catalogWatch('${country.replace(/'/g,"\\'")}','${i.name.replace(/'/g,"\\'")}',this)">Watch</button>`;
+
+      return `<tr>
+        <td><span class="cat-item-name">${i.name}</span></td>
+        <td><span class="cat-country-tag">${flag(mt)} ${country}</span></td>
+        <td class="num"><span class="badge ${badgeCls}">${badgeLbl}</span></td>
+        <td class="num cat-buy">${buy}</td>
+        ${priceCols}
+        <td>${watchBtn}</td>
+      </tr>`;
+    }).join('');
+
+    body.innerHTML = `<table class="cat-table">${thead}<tbody>${tbodyRows}</tbody></table>`;
+  }
+
+  const stat = document.getElementById('cat-stat');
+  const parts = [`${allRows.length} item${allRows.length !== 1 ? 's' : ''}`];
+  if (catalogData.updatedAt) {
+    const secs = Math.round(Date.now() / 1000 - catalogData.updatedAt);
+    parts.push(`YATA data ${secs < 60 ? `${secs}s` : `${Math.round(secs/60)}m`} old`);
+  }
+  if (!hasPrices) parts.push('Add API key in Settings for income data');
+  stat.textContent = parts.join(' · ');
+}
+
+function setCatSort(mode) {
+  if (catSortMode === mode) {
+    catSortDir = catSortDir === 'desc' ? 'asc' : 'desc';
+  } else {
+    catSortMode = mode;
+    catSortDir = mode === 'name' || mode === 'country' ? 'asc' : 'desc';
+  }
+  filterCatalog();
+}
+
+async function catalogWatch(country, item, btn) {
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    await fetch('/api/watched', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ country, item }),
+    });
+    btn.textContent = 'Watching';
+    btn.classList.add('watching');
+    await loadAll();
+  } catch(e) {
+    btn.disabled = false; btn.textContent = 'Watch';
+  }
+}
+
+loadAll();
+connectWS();
+loadTornPrices();
+</script>
+</body>
+</html>
