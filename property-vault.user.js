@@ -161,6 +161,7 @@
     if (targetInput)     targetInput.value        = formatNumber(parseAmount(CONFIG.targetCashOnHand));
     if (autoMaintainInp) autoMaintainInp.checked  = !!CONFIG.autoMaintainEnabled;
     if (autoAttackInp)   autoAttackInp.checked    = !!CONFIG.autoAttackDepositEnabled;
+    try { updateMaintainInfo(getVaultValues()); } catch(e) {}
   }
 
   async function initCloudSync() {

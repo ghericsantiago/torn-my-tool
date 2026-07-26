@@ -8,6 +8,7 @@
 // @match        https://www.torn.com/index.php
 // @match        https://www.torn.com/page.php?sid=travel*
 // @match        https://www.torn.com/gym.php
+// @match        https://www.torn.com/hospitalview.php*
 // @grant        GM_xmlhttpRequest
 // @run-at       document-idle
 // ==/UserScript==
@@ -295,6 +296,11 @@
   }
   function isAbroadOrTraveling() { return isAbroad() || isTraveling(); }
   function isHospital() { return !!document.querySelector('li[class*="icon15"]'); }
+  function isHospitalPage() {
+    return location.pathname.includes("hospitalview.php") ||
+      (location.pathname.includes("page.php") && location.search.includes("sid=hospital")) ||
+      !!document.querySelector("#hospitalroot");
+  }
 
   function setPanelStatus(text, color) {
     const el = document.getElementById("tm-af2-status");
@@ -864,6 +870,26 @@
       return;
     }
 
+    // On hospital page but no longer hospitalized — head to travel
+    if (isHospitalPage() && !isHospital()) {
+      localStorage.removeItem("tmWasHospitalized");
+      console.log("[AutoFly2] Released from hospital — navigating to travel page");
+      setPanelStatus("Released from hospital — going to travel…", "#44cc88");
+      await wait(1000);
+      location.href = "/page.php?sid=travel";
+      return;
+    }
+
+    // Was hospitalized on a previous check and now released (any page) — head to travel
+    if (!isHospital() && localStorage.getItem("tmWasHospitalized") === "1" && !isTravelPage()) {
+      localStorage.removeItem("tmWasHospitalized");
+      console.log("[AutoFly2] Hospital cleared — navigating to travel page");
+      setPanelStatus("Released from hospital — going to travel…", "#44cc88");
+      await wait(1000);
+      location.href = "/page.php?sid=travel";
+      return;
+    }
+
     // In-flight — initTravelWatch handles it
     if (isTraveling()) {
       console.log("[AutoFly2] In transit — waiting for arrival");
@@ -906,6 +932,7 @@
     }
 
     if (isHospital()) {
+      localStorage.setItem("tmWasHospitalized", "1");
       setPanelStatus("In hospital — paused");
       return;
     }
