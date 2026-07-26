@@ -157,10 +157,9 @@
     if (panel) {
       const timeoutEl = panel.querySelector("#tm-imbuy-timeout");
       const enabledEl = panel.querySelector("#tm-imbuy-enabled");
-      const itemsEl   = panel.querySelector("#tm-imbuy-items");
       if (timeoutEl) timeoutEl.value = String(settings.noBuySeconds ?? 20);
       if (enabledEl) enabledEl.checked = !!settings.enabled;
-      if (itemsEl)   itemsEl.value = serializeItems(settings.items);
+      renderItemList();
     }
     console.log(LOG, "Cloud settings synced");
   }
