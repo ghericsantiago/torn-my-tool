@@ -627,7 +627,7 @@
   }
 
   // =================== ABROAD SHOPPING ===================
-  function waitForStockTable() {
+  function waitForStockTable(timeout = 15000) {
     return new Promise(resolve => {
       const existing = document.querySelector('[class*="stockTableWrapper"]');
       if (existing) return resolve(existing);
@@ -637,7 +637,7 @@
         if (el) { observer.disconnect(); resolve(el); }
       });
       observer.observe(document.body, { childList: true, subtree: true });
-      setTimeout(() => { observer.disconnect(); resolve(null); }, 15000);
+      setTimeout(() => { observer.disconnect(); resolve(null); }, timeout);
     });
   }
 
@@ -650,12 +650,17 @@
   }
 
   async function processAbroadShopping() {
+    // Hard budget: total abroad time (shopping + fly-home clicks) must be ≤ 15s
+    const abroadDeadline = Date.now() + 15_000;
+    const msLeft = (reserve = 2000) => Math.max(0, abroadDeadline - reserve - Date.now());
+    const overBudget = (reserve = 2000) => Date.now() + reserve >= abroadDeadline;
+
     try {
       console.log("[AutoFly2] Processing abroad shopping");
-      const stockTableWrapper = await waitForStockTable();
+      const stockTableWrapper = await waitForStockTable(Math.min(8000, msLeft(3000)));
       if (!stockTableWrapper) { console.warn("[AutoFly2] No stock table — flying home anyway"); }
 
-      if (stockTableWrapper) {
+      if (stockTableWrapper && !overBudget()) {
         const purchaseInfo = getPurchaseInfo();
         let remainingSlots = purchaseInfo ? purchaseInfo.limit - purchaseInfo.purchased : Infinity;
 
@@ -679,7 +684,7 @@
             return [idx === -1 ? p : rawShoppingList[idx], ...rest];
           })();
           for (const listItem of effectiveShoppingList) {
-            if (remainingSlots <= 0) break;
+            if (remainingSlots <= 0 || overBudget()) break;
             const lowerItem = listItem.toLowerCase();
             let matchKey = null;
             for (const shopName of nameToRow.keys()) {
@@ -698,18 +703,19 @@
             const maxBtn = (amountCell || row).querySelector(
               '[class*="wai-btn"], .input-money-symbol input.wai-btn, .input-money-symbol button, input.wai-btn'
             );
-            if (maxBtn) { safeClick(maxBtn); await delay(500); }
+            if (maxBtn) { safeClick(maxBtn); await delay(300); }
 
             const buyBtn = buyCell.querySelector("button");
             if (!buyBtn) continue;
             const panelId = buyBtn.getAttribute("aria-controls");
             safeClick(buyBtn);
-            await delay(300);
+            await delay(200);
 
             let yesBtn = null;
             let clickedBuyBtn = false;
-            const deadline = Date.now() + 6000;
-            while (Date.now() < deadline) {
+            // Per-item confirm deadline: up to 3s, but never past the overall budget
+            const confirmDeadline = Math.min(Date.now() + 3000, abroadDeadline - 2000);
+            while (Date.now() < confirmDeadline) {
               const panel = panelId ? document.getElementById(panelId) : null;
               const panelBtns = panel ? [...panel.querySelectorAll("button")] : [];
               yesBtn = panelBtns.find(b => /^yes$/i.test((b.textContent || "").trim()));
@@ -722,7 +728,7 @@
               if (yesBtn) break;
               if (!clickedBuyBtn && panelBtns.length > 0) {
                 const interimBuy = panelBtns.find(b => /^buy$/i.test((b.textContent || "").trim()));
-                if (interimBuy) { safeClick(interimBuy); clickedBuyBtn = true; await delay(400); continue; }
+                if (interimBuy) { safeClick(interimBuy); clickedBuyBtn = true; await delay(200); continue; }
               }
               await delay(100);
             }
@@ -731,10 +737,10 @@
               try { yesBtn.click(); } catch (e) {}
               remainingSlots--;
               console.log(`[AutoFly2] Confirmed purchase: ${itemName}`);
-              await delay(800);
+              await delay(500);
             } else if (clickedBuyBtn) {
               remainingSlots--;
-              await delay(800);
+              await delay(500);
             }
           }
         }
@@ -861,8 +867,21 @@
   // Runs every 60s when autoEnabled. Compares current TCT to flight plan.
   async function autoFlyCheck() {
     options = loadOptions();
-    if (!options.autoEnabled) return;
     await wait(500);
+
+    // Abroad: shop and fly home regardless of autoEnabled — flyBackEnabled still controls it
+    if (isAbroad()) {
+      if (options.flyBackEnabled) {
+        const waiting = await scheduleReviveReloadIfHospitalized();
+        if (!waiting) await processAbroadShopping();
+      } else {
+        console.log("[AutoFly2] Abroad, fly-back disabled");
+      }
+      return;
+    }
+
+    // Everything below requires autoEnabled
+    if (!options.autoEnabled) return;
 
     // On gym page — run training
     if (isGymPage()) {
@@ -893,17 +912,6 @@
     // In-flight — initTravelWatch handles it
     if (isTraveling()) {
       console.log("[AutoFly2] In transit — waiting for arrival");
-      return;
-    }
-
-    // Abroad — shop then fly home
-    if (isAbroad()) {
-      if (options.flyBackEnabled) {
-        const waiting = await scheduleReviveReloadIfHospitalized();
-        if (!waiting) await processAbroadShopping();
-      } else {
-        console.log("[AutoFly2] Abroad, fly-back disabled");
-      }
       return;
     }
 
@@ -1075,8 +1083,8 @@
   function startAutoCheck() {
     stopAutoCheck();
     options = loadOptions();
+    autoFlyCheck(); // always run once — abroad handling doesn't need autoEnabled
     if (!options.autoEnabled) return;
-    autoFlyCheck();
     autoCheckIntervalId = setInterval(autoFlyCheck, 60_000);
   }
   function stopAutoCheck() {
