@@ -113,8 +113,8 @@
   async function cloudLoad() {
     if (!GIST_TOKEN || GIST_TOKEN === "YOUR_GITHUB_TOKEN_HERE") return {};
     try {
-      const r = await gmFetch(`https://api.github.com/gists/${GIST_ID}`, {
-        headers: { Authorization: `token ${GIST_TOKEN}`, Accept: "application/vnd.github.v3+json" }
+      const r = await gmFetch(`https://api.github.com/gists/${GIST_ID}?_=${Date.now()}`, {
+        headers: { Authorization: `token ${GIST_TOKEN}`, Accept: "application/vnd.github.v3+json", "Cache-Control": "no-cache" }
       });
       if (!r.ok) return {};
       const d = await r.json();
@@ -146,8 +146,9 @@
     }, 1500);
   }
 
-  async function initCloudSync() {
-    const cloud = await cloudLoad();
+  let _lastCloudContent = null;
+
+  function applyCloudSettings(cloud) {
     if (!cloud.itemmarket) return;
     const merged = Object.assign({}, DEFAULTS, cloud.itemmarket);
     if (!merged.apiKey) merged.apiKey = DEFAULTS.apiKey;
@@ -161,7 +162,26 @@
       if (enabledEl) enabledEl.checked = !!settings.enabled;
       renderItemList();
     }
+  }
+
+  async function initCloudSync() {
+    const cloud = await cloudLoad();
+    _lastCloudContent = JSON.stringify(cloud);
+    applyCloudSettings(cloud);
     console.log(LOG, "Cloud settings synced");
+  }
+
+  async function pollCloudSync() {
+    const cloud = await cloudLoad();
+    const content = JSON.stringify(cloud);
+    if (content === _lastCloudContent) return;
+    _lastCloudContent = content;
+    applyCloudSettings(cloud);
+    console.log(LOG, "Cloud settings updated from remote");
+  }
+
+  function startCloudPoll() {
+    setInterval(pollCloudSync, 1000);
   }
 
   // The item market is a hash-routed SPA at page.php?sid=ItemMarket
@@ -1308,6 +1328,7 @@
 
   startMonitor();
   initCloudSync().catch(e => console.warn(LOG, "initCloudSync error:", e));
+  startCloudPoll();
 
   // Debug helpers for console testing.
   try {

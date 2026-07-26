@@ -174,8 +174,8 @@
   async function cloudLoad() {
     if (!GIST_TOKEN || GIST_TOKEN === "YOUR_GITHUB_TOKEN_HERE") return {};
     try {
-      const r = await gmFetch(`https://api.github.com/gists/${GIST_ID}`, {
-        headers: { Authorization: `token ${GIST_TOKEN}`, Accept: "application/vnd.github.v3+json" }
+      const r = await gmFetch(`https://api.github.com/gists/${GIST_ID}?_=${Date.now()}`, {
+        headers: { Authorization: `token ${GIST_TOKEN}`, Accept: "application/vnd.github.v3+json", "Cache-Control": "no-cache" }
       });
       if (!r.ok) return {};
       const d = await r.json();
@@ -207,10 +207,10 @@
     }, 1500);
   }
 
-  async function initCloudSync() {
-    const cloud = await cloudLoad();
-    if (!cloud || !Object.keys(cloud).length) return;
+  let _lastCloudContent = null;
 
+  function applyCloudSettings(cloud) {
+    if (!cloud || !Object.keys(cloud).length) return;
     if (cloud.autofly_opts && typeof cloud.autofly_opts === "object") {
       try { localStorage.setItem(OPTS_KEY, JSON.stringify(cloud.autofly_opts)); } catch(e) {}
       options = loadOptions();
@@ -234,7 +234,26 @@
       try { localStorage.setItem(SHOPPING_LIST_KEY, JSON.stringify(cloud.autofly_shopping)); } catch(e) {}
       renderShoppingList();
     }
+  }
+
+  async function initCloudSync() {
+    const cloud = await cloudLoad();
+    _lastCloudContent = JSON.stringify(cloud);
+    applyCloudSettings(cloud);
     console.log("[AutoFly2] Cloud settings synced");
+  }
+
+  async function pollCloudSync() {
+    const cloud = await cloudLoad();
+    const content = JSON.stringify(cloud);
+    if (content === _lastCloudContent) return;
+    _lastCloudContent = content;
+    applyCloudSettings(cloud);
+    console.log("[AutoFly2] Cloud settings updated from remote");
+  }
+
+  function startCloudPoll() {
+    setInterval(pollCloudSync, 1000);
   }
 
   // =================== STATE ===================
@@ -1601,6 +1620,7 @@
   initHospitalWatch();
   initTravelWatch();
   initCloudSync().catch(e => console.warn("[AutoFly2] initCloudSync error:", e));
+  startCloudPoll();
   if (isGymPage()) {
     options = loadOptions();
     if (options.gymEnabled) processGymTraining().catch(e => console.warn("[AutoFly2] gymTraining error", e));
