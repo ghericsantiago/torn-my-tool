@@ -23,22 +23,34 @@ let settings = {
     apiKey:          '',
     travelCapacity:  28,
     sellCommission:  5,
+    travelTimes:     null,   // null = use COUNTRIES defaults; object = per-country overrides
+    ticketPreset:    'standard',
+    departureBuffer: 5,      // extra minutes to subtract from departure (bank withdraw / lag buffer)
 };
 
-// Country name → YATA key + default travel time
+// Country name → YATA key + Standard (no perk) travel time in minutes
+// Source: Torn City wiki travel table (without book)
 const COUNTRIES = Object.freeze({
-    'Mexico':          { key: 'mex', minutes:  75 },
-    'Cayman Islands':  { key: 'cay', minutes:  90 },
-    'Canada':          { key: 'can', minutes:  90 },
-    'Hawaii':          { key: 'haw', minutes: 100 },
-    'United Kingdom':  { key: 'uni', minutes: 130 },
-    'Argentina':       { key: 'arg', minutes: 150 },
-    'Switzerland':     { key: 'swi', minutes: 150 },
-    'Japan':           { key: 'jap', minutes: 158 },
-    'China':           { key: 'chi', minutes: 165 },
-    'UAE':             { key: 'uae', minutes: 190 },
-    'South Africa':    { key: 'sou', minutes: 200 },
+    'Mexico':          { key: 'mex', minutes:  24 },
+    'Cayman Islands':  { key: 'cay', minutes:  33 },
+    'Canada':          { key: 'can', minutes:  39 },
+    'Hawaii':          { key: 'haw', minutes: 127 },
+    'United Kingdom':  { key: 'uni', minutes: 151 },
+    'Argentina':       { key: 'arg', minutes: 158 },
+    'Switzerland':     { key: 'swi', minutes: 166 },
+    'Japan':           { key: 'jap', minutes: 213 },
+    'China':           { key: 'chi', minutes: 229 },
+    'UAE':             { key: 'uae', minutes: 257 },
+    'South Africa':    { key: 'sou', minutes: 282 },
 });
+
+// Returns the configured travel time for a country (airstrip-adjusted),
+// falling back to the COUNTRIES default.
+function travelMinutesFor(country) {
+    const tt = settings.travelTimes;
+    if (tt && typeof tt[country] === 'number' && tt[country] > 0) return tt[country];
+    return COUNTRIES[country]?.minutes ?? 158;
+}
 
 // ─────────────────────────────────────────────────────────────
 // Log buffer (circular, max 1000 entries)
@@ -521,7 +533,7 @@ async function tick() {
             }
             buildCycles(country, item);
 
-            const dep = getBestDeparture(country, item, travel_minutes);
+            const dep = getBestDeparture(country, item, travel_minutes + (settings.departureBuffer || 0));
             if (dep.ready && dep.predictedRestock) storePrediction(country, item, dep.predictedRestock, dep.confidence);
 
             updates.push({
@@ -604,13 +616,13 @@ app.get('/api/countries-for-item', async (req, res) => {
             });
             if (!entry) continue;
 
-            const [countryName, { minutes }] = entry;
+            const [countryName] = entry;
             found.push({
                 country:  countryName,
                 item:     match.name,    // use the casing from YATA
                 quantity: match.quantity,
                 cost:     match.cost,
-                travelMinutes: minutes,
+                travelMinutes: travelMinutesFor(countryName),
             });
         }
     }
@@ -632,12 +644,12 @@ app.get('/api/catalog', async (_req, res) => {
                 v.key.toLowerCase() === yataKey.toLowerCase()
             );
             if (!entry) continue;
-            const [countryName, { minutes }] = entry;
+            const [countryName] = entry;
             const items = (cd.stocks ?? [])
                 .filter(i => i.name)
                 .map(i => ({ name: i.name, quantity: i.quantity ?? 0, cost: i.cost ?? 0 }))
                 .sort((a, b) => a.name.localeCompare(b.name));
-            countries.push({ name: countryName, travelMinutes: minutes, items });
+            countries.push({ name: countryName, travelMinutes: travelMinutesFor(countryName), items });
         }
     }
     countries.sort((a, b) => a.name.localeCompare(b.name));
@@ -653,7 +665,7 @@ app.post('/api/watched', (req, res) => {
     const { country, item } = req.body;
     if (!country || !item) return res.status(400).json({ error: 'country and item required' });
     if (!COUNTRIES[country]) return res.status(400).json({ error: `Unknown country: ${country}` });
-    const minutes = COUNTRIES[country].minutes;
+    const minutes = travelMinutesFor(country);
     try {
         db.prepare(`INSERT OR IGNORE INTO watched_items(country, item, travel_minutes) VALUES(?,?,?)`).run(country, item, minutes);
         res.json({ ok: true });
@@ -675,7 +687,7 @@ app.get('/api/status', (_req, res) => {
         const snap = db.prepare(
             `SELECT ts, quantity, cost FROM stock_snapshots WHERE country=? AND item=? ORDER BY ts DESC LIMIT 1`
         ).get(country, item);
-        return { country, item, snapshot: snap, departure: getBestDeparture(country, item, travel_minutes), stats: computeStats(country, item), mae: getMAE(country, item) };
+        return { country, item, snapshot: snap, departure: getBestDeparture(country, item, travel_minutes + (settings.departureBuffer || 0)), stats: computeStats(country, item), mae: getMAE(country, item) };
     }));
 });
 
@@ -743,6 +755,36 @@ app.post('/api/settings', (req, res) => {
         if (!Number.isFinite(com) || com < 0 || com > 100)
             return res.status(400).json({ error: 'sellCommission must be 0–100' });
         saveSetting('sellCommission', com);
+    }
+    if (req.body.departureBuffer !== undefined) {
+        const buf = Number(req.body.departureBuffer);
+        if (!Number.isFinite(buf) || buf < 0 || buf > 60)
+            return res.status(400).json({ error: 'departureBuffer must be 0–60' });
+        saveSetting('departureBuffer', Math.round(buf));
+    }
+    if (req.body.ticketPreset !== undefined) {
+        const p = String(req.body.ticketPreset);
+        if (['standard','airstrip','wlt','bct','custom'].includes(p)) {
+            saveSetting('ticketPreset', p);
+            serverLog('INFO', `Ticket preset set to: ${p}`);
+        }
+    }
+    if (req.body.travelTimes !== undefined) {
+        const raw = req.body.travelTimes;
+        if (typeof raw !== 'object' || Array.isArray(raw))
+            return res.status(400).json({ error: 'travelTimes must be an object' });
+        const validated = {};
+        for (const [country, mins] of Object.entries(raw)) {
+            if (!COUNTRIES[country]) continue;
+            const m = Number(mins);
+            if (!Number.isFinite(m) || m < 1 || m > 9999) continue;
+            validated[country] = Math.round(m);
+        }
+        saveSetting('travelTimes', validated);
+        const upd = db.prepare(`UPDATE watched_items SET travel_minutes=? WHERE country=?`);
+        for (const [country, mins] of Object.entries(validated)) upd.run(mins, country);
+        serverLog('INFO', `Travel times saved (${Object.keys(validated).length} countries): Mexico=${validated['Mexico']}min UK=${validated['United Kingdom']}min`);
+        tick().catch(() => {});
     }
     res.json({ ...settings, apiKey: settings.apiKey ? '••••••••' : '' });
 });

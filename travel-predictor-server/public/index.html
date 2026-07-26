@@ -401,10 +401,13 @@ tbody tr { border-left: 3px solid var(--rc); }
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 14px; padding: 28px; width: 430px;
   max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 48px);
+  display: flex; flex-direction: column;
   transform: translateY(12px); transition: transform .2s;
 }
 .overlay.open .modal { transform: translateY(0); }
-.modal h2 { font-size: 16px; font-weight: 800; margin-bottom: 22px; }
+.modal h2 { font-size: 16px; font-weight: 800; margin-bottom: 22px; flex-shrink: 0; }
+.modal-scroll { flex: 1; overflow-y: auto; min-height: 0; padding-right: 4px; }
 
 .field { margin-bottom: 18px; }
 .field label {
@@ -434,7 +437,8 @@ tbody tr { border-left: 3px solid var(--rc); }
 .chip-qty { color: var(--text-muted); }
 
 .modal-footer {
-  display: flex; gap: 10px; margin-top: 22px; justify-content: flex-end;
+  display: flex; gap: 10px; margin-top: 16px; padding-top: 16px;
+  justify-content: flex-end; border-top: 1px solid var(--border);
 }
 
 /* ── BROWSE-ADD MODAL ──────────────────────────────────── */
@@ -500,6 +504,20 @@ tbody tr { border-left: 3px solid var(--rc); }
   transition: all .15s;
 }
 .retention-preset:hover { border-color: var(--accent); color: var(--accent); }
+
+.tt-preset-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 6px;
+  padding: 4px 14px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all .15s;
+}
+.tt-preset-btn:hover  { border-color: var(--accent); color: var(--accent); }
+.tt-preset-btn.active { background: var(--accent); border-color: var(--accent); color: #000; }
 
 /* ── CATALOG MODAL ─────────────────────────────────────── */
 .modal-wide {
@@ -754,6 +772,7 @@ tbody tr { border-left: 3px solid var(--rc); }
 <div class="overlay" id="settings-modal">
   <div class="modal" role="dialog" aria-modal="true">
     <h2>Settings</h2>
+    <div class="modal-scroll">
 
     <div class="field">
       <label>Data retention <span style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">(days stored in database)</span></label>
@@ -785,6 +804,17 @@ tbody tr { border-left: 3px solid var(--rc); }
     </div>
 
     <div class="field">
+      <label>Departure Buffer <span style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">(preparation time)</span></label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="s-departure-buffer" type="number" min="0" max="60" step="1" style="width:90px" value="5">
+        <span style="font-size:12px;color:var(--text-muted)">min (0–60)</span>
+      </div>
+      <p style="margin-top:6px;font-size:12px;color:var(--text-muted);line-height:1.6">
+        Extra time added before departure for bank withdrawals, slow network, etc. "Leave in X" will tell you to start preparing this many minutes earlier.
+      </p>
+    </div>
+
+    <div class="field">
       <label>Sell Commission <span style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">(market listing fee)</span></label>
       <div style="display:flex;gap:8px;align-items:center">
         <input id="s-commission" type="number" min="0" max="100" step="0.1" style="width:90px" value="5">
@@ -804,7 +834,24 @@ tbody tr { border-left: 3px solid var(--rc); }
       </p>
     </div>
 
-    <div class="modal-footer">
+    <div class="field">
+      <label>Travel Times <span style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">(one-way minutes per country)</span></label>
+      <p style="margin-top:4px;font-size:12px;color:var(--text-muted);line-height:1.6;margin-bottom:10px">
+        Pick your ticket type to auto-fill all values, or edit individually. Saving updates all existing watched items and recalculates departure predictions immediately.
+      </p>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <span style="font-size:12px;color:var(--text-muted)">Ticket type:</span>
+        <button class="tt-preset-btn" onclick="applyTravelPreset('standard')"  data-preset="standard">Standard</button>
+        <button class="tt-preset-btn" onclick="applyTravelPreset('airstrip')"  data-preset="airstrip">Airstrip</button>
+        <button class="tt-preset-btn" onclick="applyTravelPreset('wlt')"       data-preset="wlt">WLT</button>
+        <button class="tt-preset-btn" onclick="applyTravelPreset('bct')"       data-preset="bct">BCT</button>
+      </div>
+      <div id="s-travel-times-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:13px;"></div>
+    </div>
+
+    </div><!-- end modal-scroll -->
+
+    <div class="modal-footer" style="flex-shrink:0">
       <button class="btn btn-ghost" onclick="closeSettings()">Cancel</button>
       <button class="btn btn-ghost" onclick="closeSettings();openLogs()" style="margin-right:auto">Show Logs</button>
       <button class="btn btn-primary" onclick="saveSettings()">Save</button>
@@ -877,7 +924,7 @@ tbody tr { border-left: 3px solid var(--rc); }
     </div>
     <div class="catalog-footer">
       <span class="cat-stat" id="cat-stat"></span>
-      <button class="btn btn-ghost" id="cat-refresh-btn" style="display:none" onclick="renderRecommend()">↻ Refresh</button>
+      <button class="btn btn-ghost" id="cat-refresh-btn" style="display:none" onclick="refreshBestPicks(this)">↻ Refresh</button>
       <button class="btn btn-ghost" onclick="closeCatalog()">Close</button>
     </div>
   </div>
@@ -936,7 +983,7 @@ tbody tr { border-left: 3px solid var(--rc); }
             <button class="sf-chip planner-prio-btn"        data-p="chance"   onclick="setPlannerPriority('chance')">Best Chance</button>
           </div>
         </div>
-        <button class="btn btn-primary" onclick="runPlanner()" style="padding:9px 20px;font-size:14px;align-self:flex-end">📅 Plan My Day</button>
+        <button class="btn btn-primary" id="planner-run-btn" onclick="runPlanner(this)" style="padding:9px 20px;font-size:14px;align-self:flex-end">📅 Plan My Day</button>
       </div>
     </div>
     <!-- Results -->
@@ -1953,18 +2000,100 @@ async function removeWatched(id, e) {
   await loadAll();
 }
 
+/* ── Toast ──────────────────────────────────────────── */
+function _showToast(msg) {
+  let t = document.getElementById('_toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = '_toast';
+    t.style.cssText = 'position:fixed;bottom:24px;right:24px;background:var(--accent);color:#000;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;z-index:9999;pointer-events:none;transition:opacity 0.3s;opacity:0';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.opacity = '1';
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => { t.style.opacity = '0'; }, 2500);
+}
+
 /* ── Settings modal ─────────────────────────────────── */
+const COUNTRY_DEFAULTS = {
+  'Mexico': 24, 'Cayman Islands': 33, 'Canada': 39, 'Hawaii': 127,
+  'United Kingdom': 151, 'Argentina': 158, 'Switzerland': 166,
+  'Japan': 213, 'China': 229, 'UAE': 257, 'South Africa': 282,
+};
+
+const TRAVEL_PRESETS = {
+  standard: { 'Mexico':24,'Cayman Islands':33,'Canada':39,'Hawaii':127,'United Kingdom':151,'Argentina':158,'Switzerland':166,'Japan':213,'China':229,'UAE':257,'South Africa':282 },
+  airstrip:  { 'Mexico':17,'Cayman Islands':23,'Canada':27,'Hawaii':89, 'United Kingdom':106,'Argentina':111,'Switzerland':116,'Japan':149,'China':160,'UAE':180,'South Africa':197 },
+  wlt:       { 'Mexico':12,'Cayman Islands':17,'Canada':19,'Hawaii':63, 'United Kingdom':75, 'Argentina':79, 'Switzerland':83, 'Japan':107,'China':114,'UAE':128,'South Africa':141 },
+  bct:       { 'Mexico':7, 'Cayman Islands':10,'Canada':12,'Hawaii':38, 'United Kingdom':45, 'Argentina':47, 'Switzerland':50, 'Japan':64, 'China':69, 'UAE':77, 'South Africa':85  },
+};
+
+let _activeTicketPreset = 'standard';
+let _travelTimesState = {};   // source of truth — updated by preset buttons and manual edits
+
+function applyTravelPreset(preset) {
+  const times = TRAVEL_PRESETS[preset];
+  if (!times) return;
+  _activeTicketPreset = preset;
+  _travelTimesState = { ...times };
+  for (const [country, mins] of Object.entries(times)) {
+    const el = document.getElementById('s-tt-' + country.replace(/\s+/g, '_'));
+    if (el) el.value = mins;
+  }
+  document.querySelectorAll('.tt-preset-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.preset === preset);
+  });
+}
+
+function _onTravelInput(country, el) {
+  const v = Math.round(Number(el.value));
+  if (v >= 1 && v <= 9999) _travelTimesState[country] = v;
+  _activeTicketPreset = 'custom';
+  document.querySelectorAll('.tt-preset-btn').forEach(b => b.classList.remove('active'));
+}
+
 function openSettings() {
   fetch('/api/settings')
     .then(r => r.json())
     .then(s => {
-      document.getElementById('s-retention').value   = s.retentionDays;
-      document.getElementById('s-capacity').value    = s.travelCapacity ?? 28;
-      document.getElementById('s-commission').value  = s.sellCommission ?? 5;
+      document.getElementById('s-retention').value        = s.retentionDays;
+      document.getElementById('s-capacity').value         = s.travelCapacity ?? 28;
+      document.getElementById('s-commission').value       = s.sellCommission ?? 5;
+      document.getElementById('s-departure-buffer').value = s.departureBuffer ?? 5;
       document.getElementById('s-apikey').value = '';
       document.getElementById('s-apikey').placeholder = s.apiKey
         ? 'Key saved — enter new key to replace'
         : 'Enter your Torn API key…';
+
+      // Initialise state from server, falling back to Standard defaults
+      const tt = s.travelTimes || {};
+      _travelTimesState = {};
+      for (const [country, def] of Object.entries(COUNTRY_DEFAULTS)) {
+        _travelTimesState[country] = tt[country] ?? def;
+      }
+
+      // Build travel times grid
+      const grid = document.getElementById('s-travel-times-grid');
+      grid.innerHTML = Object.entries(COUNTRY_DEFAULTS).map(([country]) => {
+        const cur = _travelTimesState[country];
+        return `<div style="display:flex;align-items:center;gap:6px">
+          <span style="flex:1;color:var(--text-dim)">${country}</span>
+          <input type="number" min="1" max="9999" step="1"
+            id="s-tt-${country.replace(/\s+/g,'_')}"
+            value="${cur}"
+            oninput="_onTravelInput('${country}', this)"
+            style="width:72px;padding:4px 6px;border-radius:5px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:12px;text-align:center">
+          <span style="font-size:11px;color:var(--text-muted)">min</span>
+        </div>`;
+      }).join('');
+
+      // Highlight correct preset button
+      _activeTicketPreset = s.ticketPreset || 'standard';
+      document.querySelectorAll('.tt-preset-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.preset === _activeTicketPreset);
+      });
+
       document.getElementById('settings-modal').classList.add('open');
     })
     .catch(() => alert('Could not load settings'));
@@ -2032,18 +2161,27 @@ async function saveSettings() {
   const apiKey  = document.getElementById('s-apikey').value.trim();
   const cap     = Number(document.getElementById('s-capacity').value);
   const com     = Number(document.getElementById('s-commission').value);
+  const buf     = Number(document.getElementById('s-departure-buffer').value);
   if (!cap || cap < 1 || cap > 999) { alert('Travel capacity must be 1–999'); return; }
   if (isNaN(com) || com < 0 || com > 100) { alert('Commission must be 0–100'); return; }
+  if (isNaN(buf) || buf < 0 || buf > 60) { alert('Departure buffer must be 0–60'); return; }
+
+  // Use state variable — guaranteed to reflect preset buttons + manual edits
+  const travelTimes = { ..._travelTimesState };
+
   try {
     const r = await fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ retentionDays: days, travelCapacity: cap, sellCommission: com, ...(apiKey ? { apiKey } : {}) }),
+      body: JSON.stringify({ retentionDays: days, travelCapacity: cap, sellCommission: com, departureBuffer: buf, travelTimes, ticketPreset: _activeTicketPreset, ...(apiKey ? { apiKey } : {}) }),
     });
     if (!r.ok) throw new Error(await r.text());
-    travelCapacity = cap;
-    sellCommission = com;
+    travelCapacity  = cap;
+    sellCommission  = com;
+    departureBuffer = buf;
+    await loadAll();
     closeSettings();
+    _showToast(`Saved — ${_activeTicketPreset} travel times`);
   } catch (e) {
     alert('Failed to save: ' + e.message);
   }
@@ -2056,8 +2194,9 @@ async function loadAll() {
     fetch('/api/status').then(r => r.json()),
     fetch('/api/settings').then(r => r.json()).catch(() => ({})),
   ]);
-  if (cfg.travelCapacity)  travelCapacity = cfg.travelCapacity;
-  if (cfg.sellCommission != null) sellCommission = cfg.sellCommission;
+  if (cfg.travelCapacity)         travelCapacity  = cfg.travelCapacity;
+  if (cfg.sellCommission != null) sellCommission  = cfg.sellCommission;
+  if (cfg.departureBuffer != null) departureBuffer = cfg.departureBuffer;
   watched = w;
   for (const u of s) {
     statusMap[key(u.country, u.item)] = {
@@ -2274,6 +2413,13 @@ function buildCandidates() {
   return out.sort((a, b) => b.score - a.score);
 }
 
+async function refreshBestPicks(btn) {
+  if (btn) { btn.disabled = true; btn.textContent = '↻ Loading…'; }
+  await _refreshCatalogData();
+  renderRecommend();
+  if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh'; }
+}
+
 function renderRecommend() {
   const body      = document.getElementById('cat-body');
   const stat      = document.getElementById('cat-stat');
@@ -2377,7 +2523,8 @@ function renderRecommend() {
 
   body.innerHTML = `<table class="cat-table"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
   const t = new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', ...(tzMode==='utc'?{timeZone:'UTC'}:{}), hour12: timeFmt==='12' });
-  stat.innerHTML = `${list.length} items · top ${top.length} shown · ${t} ${tzMode==='utc'?'TCT':'local'}`
+  const dataAge = _catalogFetchedAt ? (() => { const s = Math.round(Date.now()/1000 - _catalogFetchedAt); return s < 60 ? `${s}s` : `${Math.round(s/60)}m`; })() : '?';
+  stat.innerHTML = `${list.length} items · top ${top.length} shown · stock ${dataAge} old · ${t} ${tzMode==='utc'?'TCT':'local'}`
     + (lowChkWarn ? ` <span style="color:var(--yellow);font-weight:700">⚠ All items have low stock — showing anyway</span>` : '');
 }
 
@@ -2413,10 +2560,7 @@ async function openPick() {
   document.getElementById('pick-footer').innerHTML =
     '<button class="btn btn-ghost" onclick="closePick()">Close</button>';
 
-  const fetches = [];
-  if (!catalogData?.countries) fetches.push(fetch('/api/catalog').then(r=>r.json()).then(d=>{catalogData=d;}).catch(()=>{}));
-  if (!Object.keys(tornPrices).length) fetches.push(fetch('/api/torn-prices').then(r=>r.ok?r.json():{}).then(d=>{tornPrices=d;}).catch(()=>{}));
-  if (fetches.length) await Promise.all(fetches);
+  await _ensureFreshCatalog(60);
 
   renderPick();
 }
@@ -2558,12 +2702,14 @@ async function loadTornPrices() {
 
 /* ── CATALOG ────────────────────────────────────────────── */
 let catalogData    = null;
+let _catalogFetchedAt = 0; // unix seconds
 let tornPrices     = {};
 let catFilter      = null;
 let catSortMode    = 'profit';
 let catSortDir     = 'desc';
 let travelCapacity   = 28;
 let sellCommission   = 5;
+let departureBuffer  = 5;
 let tornCategories    = {};       // { itemName: category }
 let sidebarSearch     = '';      // sidebar item search
 let sfCollapsed       = { country: false, category: false };
@@ -2574,6 +2720,27 @@ let pickModalCatFilter = new Set(); // multi-select for 🏆 pick card (empty = 
 let pickPriority   = 'balanced';    // balanced | time | profit | chance
 let picksSortMode  = 'score';
 let picksSortDir   = 'desc';
+
+// Shared helper — always fetches fresh catalog + prices, updates globals
+async function _refreshCatalogData() {
+  const [catRes, priceRes, catRes2] = await Promise.all([
+    fetch('/api/catalog'),
+    fetch('/api/torn-prices').catch(() => null),
+    fetch('/api/torn-categories').catch(() => null),
+  ]);
+  if (catRes.ok) {
+    catalogData = await catRes.json();
+    _catalogFetchedAt = Math.floor(Date.now() / 1000);
+  }
+  if (priceRes?.ok) tornPrices     = await priceRes.json().catch(() => tornPrices);
+  if (catRes2?.ok)  tornCategories = await catRes2.json().catch(() => tornCategories);
+}
+
+// Re-fetch only if data is older than `maxAgeSecs` (default 60 s)
+async function _ensureFreshCatalog(maxAgeSecs = 60) {
+  const age = Math.floor(Date.now() / 1000) - _catalogFetchedAt;
+  if (!catalogData?.countries || age > maxAgeSecs) await _refreshCatalogData();
+}
 
 async function openCatalog() {
   document.getElementById('catalog-modal').classList.add('open');
@@ -2599,18 +2766,8 @@ async function openCatalog() {
   document.getElementById('cat-body').innerHTML = '<div class="cat-empty">Loading…</div>';
   document.getElementById('cat-stat').textContent = '';
   try {
-    const [catRes, priceRes] = await Promise.all([
-      fetch('/api/catalog'),
-      fetch('/api/torn-prices'),
-    ]);
-    if (!catRes.ok) throw new Error(`Catalog: server returned ${catRes.status}`);
-    catalogData = await catRes.json();
-    if (!Array.isArray(catalogData.countries)) throw new Error('Unexpected catalog shape');
-    if (priceRes.ok) {
-      tornPrices = await priceRes.json();
-    } else {
-      tornPrices = {};
-    }
+    await _refreshCatalogData();
+    if (!Array.isArray(catalogData?.countries)) throw new Error('Unexpected catalog shape');
     renderCatTabs();
     filterCatalog();
   } catch(e) {
@@ -2857,18 +3014,11 @@ async function openPlanner() {
   document.querySelectorAll('.planner-prio-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.p === plannerPriority));
 
-  const fetches = [];
-  if (!catalogData?.countries)
-    fetches.push(fetch('/api/catalog').then(r => r.json()).then(d => { catalogData = d; }).catch(() => {}));
-  if (!Object.keys(tornPrices).length)
-    fetches.push(fetch('/api/torn-prices').then(r => r.json()).then(d => { tornPrices = d; }).catch(() => {}));
-  if (!Object.keys(tornCategories).length)
-    fetches.push(fetch('/api/torn-categories').then(r => r.json()).then(d => { tornCategories = d; }).catch(() => {}));
-
-  if (fetches.length) {
+  const age = Math.floor(Date.now() / 1000) - _catalogFetchedAt;
+  if (!catalogData?.countries || age > 60) {
     document.getElementById('planner-results').innerHTML =
-      '<div style="text-align:center;color:var(--text-muted);padding:60px">Loading data…</div>';
-    await Promise.all(fetches);
+      '<div style="text-align:center;color:var(--text-muted);padding:60px">Refreshing stock data…</div>';
+    await _refreshCatalogData();
     document.getElementById('planner-results').innerHTML =
       '<div style="text-align:center;color:var(--text-muted);padding:60px">Configure your trip above and click <strong>Plan My Day</strong>.</div>';
   }
@@ -2886,13 +3036,24 @@ function setPlannerPriority(p) {
     b.classList.toggle('active', b.dataset.p === p));
 }
 
-function runPlanner() {
+function runPlanner(btn) {
   const startCash   = parseFloat(document.getElementById('planner-cash').value)    || 0;
   const hours       = parseFloat(document.getElementById('planner-hours').value)   || 16;
   const filterMode  = document.getElementById('planner-filter').value;
   const minSurvival = parseFloat(document.getElementById('planner-survival').value) || 0.25;
   const resultsEl   = document.getElementById('planner-results');
 
+  // Clear immediately so the user sees a fresh calculation
+  resultsEl.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px">Calculating…</div>';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Planning…'; }
+  // Defer actual work one tick so the "Calculating…" renders first
+  setTimeout(() => {
+    _doRunPlanner(startCash, hours, filterMode, minSurvival, resultsEl);
+    if (btn) { btn.disabled = false; btn.innerHTML = '📅 Plan My Day'; }
+  }, 0);
+}
+
+function _doRunPlanner(startCash, hours, filterMode, minSurvival, resultsEl) {
   if (!Object.keys(tornPrices).length) {
     resultsEl.innerHTML = '<div style="text-align:center;color:var(--red);padding:60px">Add your Torn API key in ⚙ Settings to enable recommendations.</div>';
     return;
@@ -2942,15 +3103,16 @@ function runPlanner() {
 
     if (!best) break;
 
+    const depOffset = trips.length === 0 ? 0 : departureBuffer; // buffer before every trip except the first
     trips.push({
       ...best,
-      leaveSecs:  nowSecs + usedMinutes * 60,
-      returnSecs: nowSecs + (usedMinutes + best.roundTrip) * 60,
+      leaveSecs:  nowSecs + (usedMinutes + depOffset) * 60,
+      returnSecs: nowSecs + (usedMinutes + depOffset + best.roundTrip) * 60,
       cashBefore: cash,
       cashAfter:  cash + best.expectedProfit,
     });
 
-    usedMinutes += best.roundTrip;
+    usedMinutes += depOffset + best.roundTrip;
     cash        += best.expectedProfit;
   }
 
@@ -2995,6 +3157,10 @@ function _renderPlannerResults(trips, startCash, hours, usedMinutes, totalMinute
       <div>
         <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:4px">Ending Cash</div>
         <div style="font-size:28px;font-weight:800;color:var(--yellow)">${fmtMoney(trips[trips.length - 1].cashAfter)}</div>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-left:auto;align-self:flex-end;text-align:right">
+        Generated ${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}
+        ${_catalogFetchedAt ? `<br>Stock ${(() => { const s = Math.round(Date.now()/1000 - _catalogFetchedAt); return s < 60 ? s+'s' : Math.round(s/60)+'m'; })()} old` : ''}
       </div>
     </div>`;
 

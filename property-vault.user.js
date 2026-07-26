@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Property Vault Auto Withdraw/Deposit
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.4
 // @description  Maintain a target cash-on-hand value by auto depositing or withdrawing from the property vault. Mobile floating panel supported.
 // @author       GitHub Copilot
 // @match        https://www.torn.com/properties.php*
@@ -416,9 +416,20 @@
 
   const updateMaintainInfo = ({ cash, vault }) => {
     const info = document.getElementById("tm-vault-maintain-info");
-    if (info) {
-      info.textContent = `Current cash: $${formatNumber(cash)} | Vault: $${formatNumber(vault)} | Target: $${formatNumber(parseAmount(CONFIG.targetCashOnHand))}`;
-    }
+    if (!info) return;
+    const target = parseAmount(CONFIG.targetCashOnHand);
+    const delta = cash - target;
+    const deltaColor = delta > 0 ? "#ff9966" : delta < 0 ? "#66aaff" : "#44cc88";
+    const deltaStr = delta === 0 ? "on target" : (delta > 0 ? "+" : "") + "$" + formatNumber(Math.abs(delta)) + (delta > 0 ? " to deposit" : " to withdraw");
+    info.innerHTML = [
+      `<span style="color:#aaa;">Cash:</span> <span style="color:#44cc88;font-weight:bold;">$${formatNumber(cash)}</span>`,
+      `<span style="color:#555;margin:0 4px;">|</span>`,
+      `<span style="color:#aaa;">Vault:</span> <span style="color:#4db8ff;font-weight:bold;">$${formatNumber(vault)}</span>`,
+      `<span style="color:#555;margin:0 4px;">|</span>`,
+      `<span style="color:#aaa;">Target:</span> <span style="color:#f0a500;font-weight:bold;">$${formatNumber(target)}</span>`,
+      `<span style="color:#555;margin:0 4px;">|</span>`,
+      `<span style="color:${deltaColor};font-size:11px;">${deltaStr}</span>`,
+    ].join("");
   };
 
   const valuesChanged = ({ cash, vault }) => {
@@ -530,10 +541,7 @@
       "Delta:",
       delta,
     );
-    const info = document.getElementById("tm-vault-maintain-info");
-    if (info) {
-      info.textContent = `Current cash: $${formatNumber(cash)} | Vault: $${formatNumber(vault)} | Target: $${formatNumber(target)}`;
-    }
+    updateMaintainInfo({ cash, vault });
 
     if (delta === 0) {
       console.log("[Vault Script] Cash on hand already at target");
@@ -563,24 +571,39 @@
     panel.style.cssText =
       "color:#eee;font-family:Arial,sans-serif;font-size:13px;box-sizing:border-box;width:100%;";
     panel.innerHTML = `
-            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; box-sizing:border-box; width:100%;">
-                <strong style="flex:1 1 100%;">${CONFIG.insertionLabel}</strong>
-                <label style="display:flex; align-items:center; gap:6px;">
-                    Target cash on hand:
-                    <input id="tm-target-cash" type="text" value="${formatNumber(parseAmount(CONFIG.targetCashOnHand))}" style="width:110px; padding:4px 6px; border-radius:4px; border:1px solid #555; background:#111; color:#eee; box-sizing:border-box;">
-                </label>
-                <label style="display:flex; align-items:center; gap:6px;">
-                    <input id="tm-auto-maintain" type="checkbox"${CONFIG.autoMaintainEnabled ? " checked" : ""}>
-                    Auto maintain
-                </label>
-                <label style="display:flex; align-items:center; gap:6px;">
-                    <input id="tm-auto-attack-deposit" type="checkbox"${CONFIG.autoAttackDepositEnabled ? " checked" : ""}>
-                    Deposit on attack
-                </label>
-                <span id="tm-attack-countdown" style="display:none; color:#ff6b6b; font-weight:bold; white-space:nowrap;"></span>
-                <span id="tm-travel-countdown" style="display:none; color:#f0a500; font-weight:bold; white-space:nowrap;"></span>
-            </div>
-        `;
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;box-sizing:border-box;width:100%;">
+
+        <!-- Header -->
+        <div style="display:flex;justify-content:space-between;align-items:center;flex:1 1 100%;">
+          <strong>&#127974; Vault Cash Manager</strong>
+        </div>
+
+        <!-- Vault state info -->
+        <div id="tm-vault-maintain-info" style="flex:1 1 100%;font-size:12px;color:#aaa;background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:6px 10px;font-variant-numeric:tabular-nums;min-height:1em;"></div>
+
+        <!-- Alert badges (shown conditionally) -->
+        <div style="flex:1 1 100%;display:flex;gap:8px;flex-wrap:wrap;min-height:0;">
+          <span id="tm-attack-countdown" style="display:none;color:#ff6b6b;font-weight:bold;font-size:12px;background:#1a0000;border:1px solid #622;border-radius:4px;padding:3px 8px;white-space:nowrap;"></span>
+          <span id="tm-travel-countdown" style="display:none;color:#f0a500;font-weight:bold;font-size:12px;background:#1a1000;border:1px solid #664400;border-radius:4px;padding:3px 8px;white-space:nowrap;"></span>
+        </div>
+
+        <!-- Options -->
+        <div style="flex:1 1 100%;display:flex;gap:12px;flex-wrap:wrap;align-items:center;border-top:1px solid #333;padding-top:8px;">
+          <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Keep this much cash on hand — excess deposits, shortfall withdraws">
+            Target:
+            <input id="tm-target-cash" type="text" value="${formatNumber(parseAmount(CONFIG.targetCashOnHand))}"
+              style="width:100px;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;">
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Automatically deposit or withdraw to maintain the target amount">
+            <input id="tm-auto-maintain" type="checkbox"${CONFIG.autoMaintainEnabled ? " checked" : ""}> Auto-maintain
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Immediately deposit all cash to vault when an attack is detected">
+            <input id="tm-auto-attack-deposit" type="checkbox"${CONFIG.autoAttackDepositEnabled ? " checked" : ""}> Deposit on attack
+          </label>
+        </div>
+
+      </div>
+    `;
     return panel;
   };
 

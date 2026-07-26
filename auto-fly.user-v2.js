@@ -28,6 +28,21 @@
     "China", "UAE", "South Africa",
   ];
 
+  // Per-destination product lists sourced from yata.json
+  const YATA_PRODUCTS = {
+    "Mexico":         ["Axe","Samurai Sword","Desert Eagle","AK-47","M249 SAW","Outer Tactical Vest","Minigun","Springfield 1911","Trench Coat","9mm Uzi","Leather Bullwhip","Ninja Claws","Bolt Cutters","Taser","Cobra Derringer","Flak Jacket","Claymore Mine","Flare Gun","Heckler & Koch SL8","Jaguar Plushie","Dahlia","ArmaLite M-15A4","Yucca Plant","Bottle of Tequila","Crazy Straw","Kevlar Gloves","Card Skimmer","Mayan Statue","Zip Ties","Obsidian Point"],
+    "Cayman Islands": ["Tavor TAR-21","Harpoon","Diamond Bladed Knife","Naval Cutlass","Trout","Banana Orchid","Stingray Plushie","Steel Drum","Nodding Turtle","Snorkel","Flippers","Speedo","Bikini","Wetsuit","Diving Gloves","Bearer Bond"],
+    "Canada":         ["Cannabis","Ecstasy","PCP","Vicodin","Xanax","Ithaca 37","Lorcin 380","Wolverine Plushie","Hockey Stick","Crocus","PVC Cards","Ice Pick","Fire Hydrant","Mountie Hat","Safety Boots","Bear Gall","Aluminum Plate","Dog Treats","Insulin","Quartz Point"],
+    "Hawaii":         ["Type 98 Anti Tank","Bushmaster Carbon 15","HEG","Taurus","Orchid","Pele Charm","Small Suitcase","Medium Suitcase","Large Suitcase","Coconut Bra","Basalt Point","Shark Fin","Turtle Shell"],
+    "United Kingdom": ["Cannabis","Ecstasy","Ketamine","Xanax","Claymore Sword","Crossbow","PCP","Shrooms","Vicodin","Enfield SA-80","Grenade","Stick Grenade","Nessie Plushie","Heather","Red Fox Plushie","Flail","Sextant","Model Space Ship","Ship in a Bottle","Paper Weight","Tailor's Dummy","Dart Board","Cricket Bat","Frying Pan","WWII Helmet","Inkwell","Chert Point"],
+    "Argentina":      ["Chalcedony Point","Meteorite Fragment","Liquid Body Armor","Macana","Compass","Lighter","Patagonian Fossil","Cannabis","Ketamine","LSD","Shrooms","Speed","Flamethrower","Tear Gas","Throwing Knife","Monkey Plushie","Soccer Ball","Ceibo Flower"],
+    "Switzerland":    ["Cannabis","Ketamine","LSD","PCP","Shrooms","Speed","Flash Grenade","Jackhammer","Swiss Army Knife","Edelweiss","Chamois Plushie","Neumune Tablet","SIG 552","Dozen White Roses","Snowboard","Ephedrine Powder","Ergotamine Ampoule","Safrole Oil"],
+    "Japan":          ["Ecstasy","Ketamine","Opium","Shrooms","Speed","Vicodin","Xanax","BT MP9","Chain Whip","Wooden Nunchaku","Kama","Kodachi","Sai","Ninja Star","Cherry Blossom","Kabuki Mask","Maneki Neko","Bottle of Sake","Flexible Body Armor","Metal Nunchaku","Sumo Doll","Chopsticks","Sensu","Yakitori Lantern","Glow Stick","Bonded Latex","Hydrochloric Acid","Counterfeit Manga","Whale Meat"],
+    "China":          ["Ecstasy","LSD","Opium","PCP","Speed","Blowgun","Bo Staff","Fireworks","Katana","Qsz-92","SKS Carbine","Twin Tiger Hooks","Wushu Double Axes","Panda Plushie","Jade Buddha","Peony","Printing Paper","Stick of Dynamite","Guandao","Magnesium Shavings","Pangolin Scales","Tiger Bone Powder"],
+    "UAE":            ["Gold Laptop","Gold Plated AK-47","Camel Plushie","Tribulus Omanense","Sports Sneakers","Handbag","Pink Mac-10","Sports Shades","Proda Sunglasses","Potassium Nitrate","Ambergris Lump","Natural Pearls"],
+    "South Africa":   ["Knuckle Dusters","LSD","Opium","PCP","Shrooms","Xanax","Mag 7","Smoke Grenade","Spear","Vektor CR-21","Elephant Statue","Lion Plushie","African Violet","Combat Vest","Raw Ivory","Afro Comb","Combat Helmet","Combat Pants","Combat Boots","Combat Gloves","Quartzite Point","Uncut Diamonds"],
+  };
+
   const SHOPPING_LIST_DEFAULT = [
     "Camel Plushie", "Chamois Plushie", "Jaguar Plushie", "Kitten Plushie",
     "Lion Plushie", "Monkey Plushie", "Nessie Plushie", "Panda Plushie",
@@ -133,6 +148,7 @@
   let travelDomPollerId = null;
   let travelCountdownTimer = null;
   let tctClockTimer = null;
+  let nerveWatchIntervalId = null;
 
   // =================== UTILITIES ===================
   function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -529,7 +545,17 @@
             if (nc && bc) nameToRow.set(nc.textContent.trim().toLowerCase(), r);
           }
 
-          for (const listItem of loadShoppingList()) {
+          const rawShoppingList = loadShoppingList();
+          const currentFlight = getActiveFlight();
+          const effectiveShoppingList = (() => {
+            if (!currentFlight || !currentFlight.priorityProduct) return rawShoppingList;
+            const p = currentFlight.priorityProduct;
+            const idx = rawShoppingList.findIndex(x => x.toLowerCase() === p.toLowerCase());
+            if (idx === 0) return rawShoppingList;
+            const rest = rawShoppingList.filter((_, i) => i !== idx);
+            return [idx === -1 ? p : rawShoppingList[idx], ...rest];
+          })();
+          for (const listItem of effectiveShoppingList) {
             if (remainingSlots <= 0) break;
             const lowerItem = listItem.toLowerCase();
             let matchKey = null;
@@ -779,9 +805,11 @@
       if (nerve && nerve.isFull) {
         setPanelStatus(`Nerve full (${nerve.current}/${nerve.maximum}) — holding flight`, "#ff6b6b");
         console.log(`[AutoFly2] Nerve full (${nerve.current}/${nerve.maximum}) — holding flight`);
+        startNerveWatch();
         return;
       }
     }
+    stopNerveWatch();
 
     // Find the next flight ready to depart
     const nextFlight = getNextReadyFlight();
@@ -884,6 +912,22 @@
     console.log(`[AutoFly2] Waiting for Travel button for ${nextFlight.destination}`);
   }
 
+  function stopNerveWatch() {
+    if (nerveWatchIntervalId) { clearInterval(nerveWatchIntervalId); nerveWatchIntervalId = null; }
+  }
+  function startNerveWatch() {
+    if (nerveWatchIntervalId) return;
+    nerveWatchIntervalId = setInterval(async () => {
+      let nerve;
+      try { nerve = await getNerveStatus(); }
+      catch (e) { return; }
+      if (!nerve.isFull) {
+        stopNerveWatch();
+        autoFlyCheck();
+      }
+    }, 30_000);
+  }
+
   function startAutoCheck() {
     stopAutoCheck();
     options = loadOptions();
@@ -893,6 +937,7 @@
   }
   function stopAutoCheck() {
     if (autoCheckIntervalId) { clearInterval(autoCheckIntervalId); autoCheckIntervalId = null; }
+    stopNerveWatch();
   }
 
   // =================== TCT CLOCK ===================
@@ -937,10 +982,13 @@
         : flight.departureTime
           ? `<span style="color:#aaa;font-size:11px;min-width:40px;font-weight:bold;">${escHtml(flight.departureTime)}</span>`
           : `<span style="color:#44cc88;font-size:10px;min-width:40px;font-weight:bold;" title="No scheduled time — flies when ready">ASAP</span>`;
+      const destLabel = flight.priorityProduct
+        ? `${escHtml(flight.destination)}<span style="color:#f0a500;font-size:10px;margin-left:3px;" title="Priority: ${escHtml(flight.priorityProduct)}">★ ${escHtml(flight.priorityProduct)}</span>`
+        : escHtml(flight.destination);
       row.innerHTML = [
         `<span style="color:${statusColor};font-size:13px;min-width:18px;text-align:center;">${statusIcon}</span>`,
         timeLabel,
-        `<span style="flex:1;font-size:12px;color:${statusColor};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(flight.destination)}</span>`,
+        `<span style="flex:1;font-size:12px;color:${statusColor};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${destLabel}</span>`,
         `<button data-action="toggle-loop" data-idx="${i}" style="${loopS}" title="${flight.loop ? "Loop ON — click to disable" : "Loop OFF — click to enable continuous repeat"}">&#x21bb;</button>`,
         `<button data-action="edit-flight" data-idx="${i}" style="${editS}">✎</button>`,
         `<button data-action="up" data-idx="${i}" style="${btnS}"${i === 0 ? " disabled" : ""}>↑</button>`,
@@ -1031,9 +1079,13 @@
             <input id="tm-af2-new-time" type="text" placeholder="HH:MM" maxlength="5"
               title="Enter time in TCT (UTC) 24-hour format, e.g. 14:30. Leave blank to fly immediately (ASAP)."
               style="padding:4px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;width:70px;">
+            <input id="tm-af2-new-product" type="text" placeholder="Priority product…" list="tm-af2-new-product-list"
+              title="Optionally prioritise one product from this destination — it will be bought first."
+              style="flex:2;min-width:140px;padding:4px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;">
+            <datalist id="tm-af2-new-product-list"></datalist>
             <button id="tm-af2-add-flight" style="padding:4px 10px;border-radius:4px;border:1px solid #555;background:#333;color:#eee;cursor:pointer;font-size:12px;white-space:nowrap;">+ Add Flight</button>
           </div>
-          <div style="color:#555;font-size:10px;margin-top:4px;">Time is optional (TCT/UTC). ASAP = no time set, flies when ready. ● = ready. ✈ = flying. ✓ = done. &#x21bb; = loop.</div>
+          <div style="color:#555;font-size:10px;margin-top:4px;">Time is optional (TCT/UTC). ASAP = no time set, flies when ready. ● = ready. ✈ = flying. ✓ = done. &#x21bb; = loop. ★ = priority product.</div>
         </details>
 
         <!-- Automation -->
@@ -1166,13 +1218,18 @@
           const row = btn.closest("div");
           const timeInpS = "padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:11px;box-sizing:border-box;width:80px;";
           const destSelS = "flex:1;min-width:0;padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:11px;box-sizing:border-box;";
+          const productInpS = "padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:11px;box-sizing:border-box;width:130px;min-width:0;";
           const saveS = "padding:1px 5px;background:#1a3a1a;border:1px solid #2a6a2a;color:#6f6;border-radius:3px;cursor:pointer;font-size:11px;";
           const cancelS = "padding:1px 5px;background:#220000;border:1px solid #622;color:#f66;border-radius:3px;cursor:pointer;font-size:11px;";
+          const editDlId = `tm-af2-edit-pdl-${idx}`;
+          const initProducts = (YATA_PRODUCTS[flight.destination] || []).map(p => `<option value="${escHtml(p)}"></option>`).join("");
           row.innerHTML = [
             `<input type="text" placeholder="HH:MM" maxlength="5" data-edit-time="${idx}" value="${escHtml(flight.departureTime)}" style="${timeInpS}">`,
             `<select data-edit-dest="${idx}" style="${destSelS}">`,
             VALID_DESTINATIONS.map(d => `<option${d === flight.destination ? " selected" : ""}>${escHtml(d)}</option>`).join(""),
             `</select>`,
+            `<input type="text" placeholder="Priority product" data-edit-product="${idx}" value="${escHtml(flight.priorityProduct || "")}" list="${editDlId}" style="${productInpS}">`,
+            `<datalist id="${editDlId}">${initProducts}</datalist>`,
             `<button data-action="save-flight" data-idx="${idx}" style="${saveS}">✓</button>`,
             `<button data-action="cancel-flight" data-idx="${idx}" style="${cancelS}">✗</button>`,
           ].join("");
@@ -1182,20 +1239,29 @@
             if (ev.key === "Enter") { ev.preventDefault(); row.querySelector('[data-action="save-flight"]').click(); }
             if (ev.key === "Escape") { ev.preventDefault(); renderFlightPlan(); }
           });
+          const editDestSel = row.querySelector("select[data-edit-dest]");
+          const editDl = document.getElementById(editDlId);
+          if (editDestSel && editDl) {
+            editDestSel.addEventListener("change", () => {
+              editDl.innerHTML = (YATA_PRODUCTS[editDestSel.value] || []).map(p => `<option value="${escHtml(p)}"></option>`).join("");
+              const prodInp = row.querySelector("input[data-edit-product]");
+              if (prodInp) prodInp.value = "";
+            });
+          }
 
         } else if (action === "save-flight") {
           const row = btn.closest("div");
           const newTime = (row.querySelector("input[data-edit-time]") || {}).value || "";
           const newDest = (row.querySelector("select[data-edit-dest]") || {}).value || "";
+          const newProduct = ((row.querySelector("input[data-edit-product]") || {}).value || "").trim();
           if (newDest && plan[idx]) {
-            plan[idx].departureTime = newTime; // empty string = no scheduled time, fires ASAP
+            plan[idx].departureTime = newTime;
             plan[idx].destination = newDest;
-            // Re-activate "done" flights that are being rescheduled
+            plan[idx].priorityProduct = newProduct;
             if (plan[idx].status === "done") plan[idx].status = "pending";
             saveFlightPlan(plan);
           }
           renderFlightPlan();
-          // Re-evaluate immediately so the new time takes effect without waiting 60s
           autoFlyCheck();
 
         } else if (action === "cancel-flight") {
@@ -1221,19 +1287,38 @@
       });
     }
 
+    // Populate add-flight product datalist and refresh it when destination changes
+    const newDestEl = document.getElementById("tm-af2-new-dest");
+    const newProductDL = document.getElementById("tm-af2-new-product-list");
+    function refreshAddProductList(dest) {
+      if (!newProductDL) return;
+      newProductDL.innerHTML = (YATA_PRODUCTS[dest] || []).map(p => `<option value="${escHtml(p)}"></option>`).join("");
+    }
+    if (newDestEl) {
+      refreshAddProductList(newDestEl.value);
+      newDestEl.addEventListener("change", () => {
+        refreshAddProductList(newDestEl.value);
+        const productEl = document.getElementById("tm-af2-new-product");
+        if (productEl) productEl.value = "";
+      });
+    }
+
     // Add flight button
     const addFlightBtn = document.getElementById("tm-af2-add-flight");
     if (addFlightBtn) {
       addFlightBtn.addEventListener("click", () => {
         const destEl = document.getElementById("tm-af2-new-dest");
         const timeEl = document.getElementById("tm-af2-new-time");
+        const productEl = document.getElementById("tm-af2-new-product");
         const dest = (destEl && destEl.value) || "";
         const time = (timeEl && timeEl.value) || "";
+        const product = ((productEl && productEl.value) || "").trim();
         if (!dest) return;
         const plan = loadFlightPlan();
-        plan.push({ id: genId(), destination: dest, departureTime: time, status: "pending", loop: false });
+        plan.push({ id: genId(), destination: dest, departureTime: time, status: "pending", loop: false, priorityProduct: product });
         saveFlightPlan(plan);
         renderFlightPlan();
+        if (productEl) productEl.value = "";
         const toggle = document.getElementById("tm-af2-plan-toggle");
         if (toggle && !toggle.open) toggle.open = true;
       });

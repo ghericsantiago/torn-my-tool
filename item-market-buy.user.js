@@ -1,7 +1,7 @@
-// ==UserScript==
+﻿// ==UserScript==
 // @name         Torn Item Market Auto Buy
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.5
 // @description  Auto-buy a watchlist of items on the Torn item market, sizing quantity to your cash on hand, cycling items on a no-buy timeout, with an on-page settings panel.
 // @author       GitHub Copilot
 // @match        https://www.torn.com/page.php*
@@ -22,11 +22,14 @@
   // Minimum gap between scans while the seller list is mutating rapidly, so a
   // stream of realtime updates can't starve or spam the buy logic.
   const SCAN_MIN_GAP_MS = 500;
+  const ITEMS_CACHE_KEY = "tmItemMarketBuyItemsCache";
+  const ITEMS_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
   const DEFAULTS = {
     items: [], // watchlist: [{ name, maxPrice }]
     noBuySeconds: 20, // advance to next item after this long with no purchase
     enabled: false,
+    apiKey: "v6Yo75UQIYvWYrhT",
   };
 
   // Parse the multi-line items textarea into [{ name, maxPrice }].
@@ -68,6 +71,7 @@
         ].filter((i) => i.name);
       }
       if (!Array.isArray(merged.items)) merged.items = [];
+      if (!merged.apiKey) merged.apiKey = DEFAULTS.apiKey;
       delete merged.itemName;
       delete merged.maxUnitPrice;
       return merged;
@@ -95,6 +99,7 @@
   let currentIndex = 0; // which watchlist item is active
   let itemStartTs = 0; // when we started dwelling on the current item (reset on buy)
   let advanceTimer = null; // interval that advances items after the no-buy timeout
+  let tornItems = null; // cache of Torn API items: { id: { name, market_value, ... } }
 
   // -------------------------------------------------------------------------
   // Number helpers (reused from property-vault.user.js)
@@ -302,35 +307,35 @@
   }
 
   function getSelectedItemTitle() {
-    const header = document.querySelector('[class^="itemsHeader___"]');
+    const header = document.querySelector('[class*="itemsHeader___"]');
     if (!header) return "";
-    const title = header.querySelector('[class^="title___"]');
+    const title = header.querySelector('[class*="title___"]');
     return title ? title.textContent.trim() : "";
   }
 
   function getSearchInput() {
-    return document.querySelector('input[class^="searchInput___"]');
+    return document.querySelector('input[class*="searchInput___"]');
   }
 
   function getSellerRows() {
-    const list = document.querySelector('ul[class^="sellerList___"]');
+    const list = document.querySelector('ul[class*="sellerList___"]');
     if (!list) return [];
-    return Array.from(list.querySelectorAll('li[class^="rowWrapper___"]'));
+    return Array.from(list.querySelectorAll('li[class*="rowWrapper___"]'));
   }
 
   // Parse a data row into { unitPrice, available, row, sellerRow }, or null
   // for the header row / unparseable rows.
   function parseRow(li) {
-    const sellerRow = li.querySelector('[class^="sellerRow___"]');
+    const sellerRow = li.querySelector('[class*="sellerRow___"]');
     if (!sellerRow) return null;
     // Header row has a priceHead cell, not a real price cell.
-    if (sellerRow.querySelector('[class^="priceHead___"]')) return null;
-    const priceEl = sellerRow.querySelector('[class^="price___"]');
-    const availEl = sellerRow.querySelector('[class^="available___"]');
+    if (sellerRow.querySelector('[class*="priceHead___"]')) return null;
+    const priceEl = sellerRow.querySelector('[class*="price___"]');
+    const availEl = sellerRow.querySelector('[class*="available___"]');
     if (!priceEl || !availEl) return null;
     const unitPrice = parseAmount(priceEl.textContent || "0");
-    // Desktop shows "54 available"; mobile shows "54". Parse plain digits only —
-    // parseAmount would treat the "b" in "available" as a billions suffix.
+    // Desktop shows “54 available”; mobile shows “54”. Parse plain digits only —
+    // parseAmount would treat the “b” in “available” as a billions suffix.
     const availDigits = (availEl.textContent || "").replace(/[^\d]/g, "");
     const available = availDigits ? parseInt(availDigits, 10) : 0;
     if (unitPrice <= 0 || available <= 0) return null;
@@ -406,7 +411,7 @@
     await waitForNode(() => {
       const t = getSelectedItemTitle();
       return t && t.toLowerCase() === target.toLowerCase()
-        ? document.querySelector('ul[class^="sellerList___"]')
+        ? document.querySelector('ul[class*="sellerList___"]')
         : null;
     }, 4000);
 
@@ -421,21 +426,21 @@
     const { row } = entry;
 
     // Two layouts share the same class prefixes:
-    //  - Mobile: a "Show buy controls" button expands a [class^="buyDialog___"].
-    //  - Desktop: buy controls are inline in the row ([class^="buyControlsInRow___"]),
+    //  - Mobile: a "Show buy controls" button expands a [class*="buyDialog___"].
+    //  - Desktop: buy controls are inline in the row ([class*="buyControlsInRow___"]),
     //    no expand step, and the BUY button starts disabled until a qty is set.
     // Resolve a single `container` that holds the input.input-money + buy button.
     let container = null;
     const showBtn = row.querySelector(
-      'button[class^="showBuyControlsButton___"]',
+      'button[class*="showBuyControlsButton___"]',
     );
     if (showBtn) {
-      let dialog = row.querySelector('[class^="buyDialog___"]');
+      let dialog = row.querySelector('[class*="buyDialog___"]');
       const visible = dialog && dialog.offsetParent !== null;
       if (!visible) {
         safeClick(showBtn);
         dialog = await waitForNode(
-          () => row.querySelector('[class^="buyDialog___"]'),
+          () => row.querySelector('[class*="buyDialog___"]'),
           3000,
         );
       }
@@ -447,8 +452,8 @@
     } else {
       // Desktop inline controls (or fall back to the row itself).
       container =
-        row.querySelector('[class^="buyControlsInRow___"]') ||
-        row.querySelector('[class^="buyControls___"]') ||
+        row.querySelector('[class*="buyControlsInRow___"]') ||
+        row.querySelector('[class*="buyControls___"]') ||
         row;
     }
     await wait(150);
@@ -484,9 +489,9 @@
     }
 
     const buyBtn =
-      container.querySelector('button[class^="buyButton___"]') ||
+      container.querySelector('button[class*="buyButton___"]') ||
       container.querySelector('button[aria-label^="Buy "]') ||
-      row.querySelector('button[class^="buyButton___"]');
+      row.querySelector('button[class*="buyButton___"]');
     if (!buyBtn) {
       console.warn(LOG, "buy button not found");
       return false;
@@ -498,6 +503,7 @@
       buyBtn.removeAttribute("disabled");
     }
     // Move the mouse over the buy button before clicking.
+    if (!settings.enabled) return false; // aborted by user
     await simulateMouseMove(buyBtn);
     console.log(LOG, `clicking BUY for qty ${qty}`);
     safeClick(buyBtn);
@@ -521,19 +527,19 @@
     // Read it for logging, then close it so the row is buyable again.
     const success = await waitForNode(
       () =>
-        container.querySelector('[class^="successText___"]') ||
-        document.querySelector('[class^="successText___"]'),
+        container.querySelector('[class*="successText___"]') ||
+        document.querySelector('[class*="successText___"]'),
       2500,
     );
     if (success) {
       console.log(LOG, "buy confirmed:", success.textContent.trim());
       const dialog =
-        success.closest('[class^="buyDialog___"]') ||
-        success.closest('[class^="confirmMessage___"]')?.parentElement ||
+        success.closest('[class*="buyDialog___"]') ||
+        success.closest('[class*="confirmMessage___"]')?.parentElement ||
         container;
       const closeBtn =
         dialog.querySelector('button[aria-label="Close panel"]') ||
-        dialog.querySelector('[class^="closeButtonWrapper___"] button');
+        dialog.querySelector('[class*="closeButtonWrapper___"] button');
       if (closeBtn) {
         console.log(LOG, "closing success message");
         safeClick(closeBtn);
@@ -555,6 +561,12 @@
         return;
       }
       if (currentIndex >= list.length) currentIndex = 0;
+      // Advance past any skipped items
+      const _skipStart = currentIndex;
+      while (list[currentIndex]?.skipped) {
+        currentIndex = (currentIndex + 1) % list.length;
+        if (currentIndex === _skipStart) { setStatus("All items are skipped."); return; }
+      }
       const cur = list[currentIndex];
       const tag = `[${currentIndex + 1}/${list.length}] ${cur.name}`;
 
@@ -592,6 +604,7 @@
       let boughtUnits = 0;
       let spent = 0;
       for (const entry of entries) {
+        if (!settings.enabled) break; // user disabled mid-loop
         money = getMoneyOnHand(); // refresh after each purchase
         const affordable = Math.floor(money / entry.unitPrice);
         const qty = Math.min(entry.available, affordable);
@@ -627,7 +640,11 @@
   function advanceItem(reason) {
     const list = settings.items || [];
     if (list.length <= 1) return; // nothing to cycle to
-    currentIndex = (currentIndex + 1) % list.length;
+    const startIdx = currentIndex;
+    do {
+      currentIndex = (currentIndex + 1) % list.length;
+    } while (list[currentIndex]?.skipped && currentIndex !== startIdx);
+    if (list[currentIndex]?.skipped) return; // all items skipped
     itemStartTs = Date.now();
     lastSearchedItem = null; // force a fresh search for the new item
     const cur = list[currentIndex];
@@ -643,17 +660,19 @@
     const el = document.getElementById("tm-imbuy-countdown");
     if (!el) return;
     if (!settings.enabled || !list.length) {
-      el.textContent = "";
+      el.innerHTML = '<span style=”color:#555;”>&mdash;</span>';
       return;
     }
     const cur = list[currentIndex] || {};
-    const pos = `[${currentIndex + 1}/${list.length}] ${cur.name || ""}`;
+    const nameHtml = `<span style="color:#fff;font-weight:bold;">${cur.name || ""}</span>`;
+    const posHtml = `<span style="color:#555;font-size:11px;">[${currentIndex + 1}/${list.length}]</span> ${nameHtml}`;
     if (list.length <= 1) {
-      el.textContent = `Sniping ${cur.name || ""} (single item — no cycling)`;
+      el.innerHTML = `&#128722; Sniping ${nameHtml} <span style=”color:#555;font-size:11px;”>(single item &mdash; no cycling)</span>`;
     } else if (busy) {
-      el.textContent = `Buying ${pos}…`;
+      el.innerHTML = `&#128722; Buying ${posHtml}<span style="color:#f0a500;">&hellip;</span>`;
     } else {
-      el.textContent = `${pos} — next item in ${Math.ceil(remainingMs / 1000)}s`;
+      const secs = Math.ceil(remainingMs / 1000);
+      el.innerHTML = `&#128722; ${posHtml} <span style=”color:#555;font-size:11px;”>&mdash; next in <span style=”color:#f0a500;”>${secs}s</span></span>`;
     }
   }
 
@@ -700,7 +719,7 @@
     // Observe the (stable) market wrapper so we catch both realtime row
     // updates within the seller list and full list swaps on item change.
     const target =
-      document.querySelector('[class^="marketWrapper___"]') || document.body;
+      document.querySelector('[class*="marketWrapper___"]') || document.body;
     monitorObserver = new MutationObserver(scheduleScan);
     monitorObserver.observe(target, { childList: true, subtree: true });
     // Time-based check that cycles to the next item after the no-buy timeout.
@@ -728,6 +747,108 @@
   // -------------------------------------------------------------------------
   // UI
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // Torn API — item list + market prices
+  // -------------------------------------------------------------------------
+  async function fetchTornItems() {
+    if (!settings.apiKey) return;
+    try {
+      const cached = JSON.parse(localStorage.getItem(ITEMS_CACHE_KEY) || "{}");
+      if (cached.ts && Date.now() - cached.ts < ITEMS_CACHE_TTL_MS && cached.data) {
+        tornItems = cached.data;
+        return;
+      }
+    } catch (e) {}
+    try {
+      const res = await fetch(
+        `https://api.torn.com/torn/?selections=items&key=${settings.apiKey}&comment=tmItemMarketBuy`,
+      );
+      const json = await res.json();
+      if (json.error) {
+        console.warn(LOG, "Torn API error:", json.error.error);
+        return;
+      }
+      tornItems = json.items;
+      localStorage.setItem(ITEMS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: tornItems }));
+    } catch (e) {
+      console.warn(LOG, "fetchTornItems failed", e);
+    }
+  }
+
+  function getItemsMatching(prefix, limit = 12) {
+    if (!tornItems || !prefix) return [];
+    const lower = prefix.toLowerCase();
+    return Object.values(tornItems)
+      .filter(i => i.name.toLowerCase().includes(lower))
+      .sort((a, b) => {
+        const as = a.name.toLowerCase().startsWith(lower);
+        const bs = b.name.toLowerCase().startsWith(lower);
+        return as === bs ? a.name.localeCompare(b.name) : as ? -1 : 1;
+      })
+      .slice(0, limit);
+  }
+
+  function getMarketValue(name) {
+    if (!tornItems) return 0;
+    const lower = name.toLowerCase();
+    const item = Object.values(tornItems).find(i => i.name.toLowerCase() === lower);
+    return item?.market_value || 0;
+  }
+
+  function setupAutocomplete(input, onSelect) {
+    const wrap = input.parentElement;
+    const dd = document.createElement("div");
+    dd.style.cssText = "display:none;position:absolute;top:calc(100% + 2px);left:0;right:0;z-index:100000;background:#1a1a1a;border:1px solid #444;border-radius:4px;max-height:180px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.6);";
+    wrap.appendChild(dd);
+
+    let activeIdx = -1;
+    const rows = () => Array.from(dd.children);
+
+    const highlight = (i) => {
+      rows().forEach((r, j) => { r.style.background = j === i ? "#2a2a3a" : ""; });
+      activeIdx = i;
+    };
+
+    const render = (matches) => {
+      dd.innerHTML = "";
+      activeIdx = -1;
+      if (!matches.length) { dd.style.display = "none"; return; }
+      dd.style.display = "block";
+      matches.forEach((item, i) => {
+        const opt = document.createElement("div");
+        opt.style.cssText = "padding:5px 8px;cursor:pointer;font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:8px;";
+        opt.innerHTML = `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(item.name)}</span><span style="color:#f0a500;font-size:11px;white-space:nowrap;flex-shrink:0;">${item.market_value ? "$" + formatNumber(item.market_value) : ""}</span>`;
+        opt.addEventListener("mouseover", () => highlight(i));
+        opt.addEventListener("mousedown", e => { e.preventDefault(); onSelect(item); dd.style.display = "none"; });
+        dd.appendChild(opt);
+      });
+    };
+
+    input.addEventListener("input", () => {
+      const v = input.value.trim();
+      if (!v || !tornItems) { dd.style.display = "none"; return; }
+      render(getItemsMatching(v));
+    });
+
+    input.addEventListener("keydown", e => {
+      const list = rows();
+      if (!list.length || dd.style.display === "none") return;
+      if (e.key === "ArrowDown") { e.preventDefault(); highlight(Math.min(activeIdx + 1, list.length - 1)); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); highlight(Math.max(activeIdx - 1, 0)); }
+      else if (e.key === "Enter" && activeIdx >= 0) { e.preventDefault(); list[activeIdx].dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); }
+      else if (e.key === "Escape") { dd.style.display = "none"; }
+    });
+
+    document.addEventListener("click", e => {
+      if (!wrap.contains(e.target)) dd.style.display = "none";
+    }, { passive: true });
+
+    return { close: () => { dd.style.display = "none"; } };
+  }
+
+  // -------------------------------------------------------------------------
+  // Mobile detection
+  // -------------------------------------------------------------------------
   function isMobile() {
     return (
       /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
@@ -741,51 +862,219 @@
     console.log(LOG, text);
   }
 
+  function escHtml(s) {
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+
+  function renderItemList() {
+    const container = document.getElementById("tm-imbuy-items-list");
+    const summary = document.getElementById("tm-imbuy-items-summary");
+    if (!container) return;
+    const list = settings.items || [];
+    if (summary) summary.textContent = `(${list.length} item${list.length !== 1 ? "s" : ""}) — top = first bought`;
+    if (!list.length) {
+      container.innerHTML = '<div style="color:#555;font-size:12px;padding:6px 0;">No items. Add one below.</div>';
+      return;
+    }
+    const btnS = "padding:1px 5px;background:#222;border:1px solid #444;color:#ccc;border-radius:3px;cursor:pointer;font-size:11px;";
+    const editS = "padding:1px 5px;background:#1a2a3a;border:1px solid #2a4a6a;color:#6af;border-radius:3px;cursor:pointer;font-size:11px;";
+    const delS = "padding:1px 5px;background:#220000;border:1px solid #622;color:#f66;border-radius:3px;cursor:pointer;font-size:11px;";
+    const skipS = "padding:1px 5px;background:#1a1a0a;border:1px solid #554400;color:#aa8;border-radius:3px;cursor:pointer;font-size:11px;";
+    const unskipS = "padding:1px 5px;background:#0a1a0a;border:1px solid #2a6a2a;color:#6f6;border-radius:3px;cursor:pointer;font-size:11px;";
+    container.innerHTML = "";
+    list.forEach((item, i) => {
+      const row = document.createElement("div");
+      row.style.cssText = `display:flex;align-items:center;gap:4px;padding:4px 0;border-bottom:1px solid #2a2a2a;${item.skipped ? "opacity:0.45;" : ""}`;
+      const priceHtml = item.maxPrice
+        ? `<span style="color:#f0a500;font-size:11px;white-space:nowrap;">&#8804; $${formatNumber(parseAmount(item.maxPrice))}</span>`
+        : `<span style="color:#555;font-size:11px;">no max</span>`;
+      row.innerHTML = [
+        `<span style="color:#555;font-size:10px;min-width:16px;text-align:right;">${i + 1}.</span>`,
+        `<span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${item.skipped ? "text-decoration:line-through;color:#555;" : ""}">${escHtml(item.name)}</span>`,
+        priceHtml,
+        `<button data-action="skip" data-idx="${i}" style="${item.skipped ? unskipS : skipS}" title="${item.skipped ? "Enable item" : "Skip item"}">${item.skipped ? "&#9654;" : "&#9646;&#9646;"}</button>`,
+        `<button data-action="edit" data-idx="${i}" style="${editS}">&#9998;</button>`,
+        `<button data-action="up" data-idx="${i}" style="${btnS}"${i === 0 ? " disabled" : ""}>&#8593;</button>`,
+        `<button data-action="down" data-idx="${i}" style="${btnS}"${i === list.length - 1 ? " disabled" : ""}>&#8595;</button>`,
+        `<button data-action="remove" data-idx="${i}" style="${delS}">&#215;</button>`,
+      ].join("");
+      container.appendChild(row);
+    });
+  }
+
   function buildPanelElement() {
     const panel = document.createElement("div");
     panel.id = PANEL_ID;
     panel.style.cssText =
       "color:#eee;font-family:Arial,sans-serif;font-size:13px;box-sizing:border-box;width:100%;";
     panel.innerHTML = `
-      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; box-sizing:border-box; width:100%;">
-        <strong style="flex:1 1 100%;">Torn Item Market Auto Buy</strong>
-        <label style="display:flex; flex-direction:column; gap:4px; flex:1 1 100%; min-width:0;">
-          Items (one per line: Name = max price)
-          <textarea id="tm-imbuy-items" rows="4" placeholder="Xanax = 800k&#10;Bottle of Beer = 900&#10;Feathery Hotel Coupon = 1.5m" style="width:100%; padding:6px; border-radius:4px; border:1px solid #555; background:#111; color:#eee; box-sizing:border-box; resize:vertical; font-family:monospace; font-size:12px;"></textarea>
-        </label>
-        <label style="display:flex; align-items:center; gap:6px;">
-          Next item after (s):
-          <input id="tm-imbuy-timeout" type="number" min="1" style="width:70px; padding:4px 6px; border-radius:4px; border:1px solid #555; background:#111; color:#eee; box-sizing:border-box;">
-        </label>
-        <label style="display:flex; align-items:center; gap:6px;">
-          <input id="tm-imbuy-enabled" type="checkbox"> Auto-buy
-        </label>
-        <span id="tm-imbuy-countdown" style="flex:1 1 100%; color:#f0a500; font-weight:bold; white-space:normal;"></span>
-        <span id="tm-imbuy-status" style="flex:1 1 100%; color:#8bd; white-space:normal;"></span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;box-sizing:border-box;width:100%;">
+
+        <!-- Header -->
+        <div style="display:flex;justify-content:space-between;align-items:center;flex:1 1 100%;">
+          <strong>&#128722; Item Market Auto Buy</strong>
+        </div>
+
+        <!-- Active item / countdown badge -->
+        <div id="tm-imbuy-countdown" style="flex:1 1 100%;color:#f0a500;font-weight:bold;font-size:12px;background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:6px 10px;min-height:1.5em;font-variant-numeric:tabular-nums;"></div>
+
+        <!-- Status line -->
+        <span id="tm-imbuy-status" style="flex:1 1 100%;color:#8bd;font-size:12px;min-height:1em;"></span>
+
+        <!-- Watchlist -->
+        <details id="tm-imbuy-items-toggle" open style="flex:1 1 100%;border-top:1px solid #333;padding-top:6px;">
+          <summary style="cursor:pointer;color:#aaa;font-size:12px;user-select:none;list-style:none;display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-weight:bold;">Watchlist <span id="tm-imbuy-items-summary" style="font-weight:normal;color:#666;font-size:11px;"></span></span>
+          </summary>
+          <div id="tm-imbuy-items-list" style="margin-top:6px;max-height:200px;overflow-y:auto;"></div>
+          <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center;">
+            <div id="tm-imbuy-name-wrap" style="flex:2;min-width:120px;position:relative;">
+              <input id="tm-imbuy-new-name" type="text" placeholder="Item name..."
+                style="width:100%;padding:4px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;">
+            </div>
+            <input id="tm-imbuy-new-price" type="text" placeholder="Max price (auto-fills from market)"
+              style="flex:1;min-width:90px;padding:4px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;">
+            <button id="tm-imbuy-add-item" style="padding:4px 10px;border-radius:4px;border:1px solid #555;background:#333;color:#eee;cursor:pointer;font-size:12px;white-space:nowrap;">+ Add</button>
+          </div>
+          <div style="color:#555;font-size:10px;margin-top:4px;">Top item is bought first. &#8804; = max price cap. Blank price uses market value.</div>
+        </details>
+
+        <!-- Options row -->
+        <div style="flex:1 1 100%;display:flex;gap:12px;flex-wrap:wrap;align-items:center;border-top:1px solid #333;padding-top:8px;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
+            <input id="tm-imbuy-enabled" type="checkbox"> Auto-buy
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Move to the next watchlist item after this many seconds without a purchase">
+            Next item after:
+            <input id="tm-imbuy-timeout" type="number" min="1"
+              style="width:52px;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;text-align:center;">
+            s
+          </label>
+        </div>
+
       </div>
     `;
     return panel;
   }
 
-  function wirePanel() {
-    const $ = (id) => document.getElementById(id);
-    const itemsEl = $("tm-imbuy-items");
+  function wirePanel(panelEl) {
+    if (!panelEl || panelEl.dataset.wired) return;
+    panelEl.dataset.wired = "1";
+    const $ = (id) => panelEl.querySelector(`#${id}`);
     const timeoutEl = $("tm-imbuy-timeout");
     const enabledEl = $("tm-imbuy-enabled");
-    if (!itemsEl) return;
+    if (!timeoutEl || !enabledEl) return;
 
-    itemsEl.value = serializeItems(settings.items);
     timeoutEl.value = settings.noBuySeconds || 20;
     enabledEl.checked = !!settings.enabled;
 
-    itemsEl.addEventListener("change", () => {
-      settings.items = parseItemsText(itemsEl.value);
-      lastSearchedItem = null;
-      currentIndex = 0;
-      itemStartTs = Date.now();
-      saveSettings(settings);
-      setStatus(`${settings.items.length} item(s) in watchlist.`);
-    });
+    // Watchlist row interactions (edit / save / cancel / up / down / remove)
+    const itemsList = $("tm-imbuy-items-list");
+    if (itemsList) {
+      renderItemList();
+      itemsList.addEventListener("click", e => {
+        const btn = e.target.closest("button[data-action]");
+        if (!btn) return;
+        const action = btn.dataset.action;
+        const idx = parseInt(btn.dataset.idx, 10);
+        const inpS = "padding:2px 5px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;min-width:0;";
+        const saveS = "padding:1px 5px;background:#1a3a1a;border:1px solid #2a6a2a;color:#6f6;border-radius:3px;cursor:pointer;font-size:11px;";
+        const cancelS = "padding:1px 5px;background:#220000;border:1px solid #622;color:#f66;border-radius:3px;cursor:pointer;font-size:11px;";
+
+        if (action === "edit") {
+          const item = settings.items[idx];
+          if (!item) return;
+          const row = btn.closest("div");
+          row.innerHTML = [
+            `<span style="color:#555;font-size:10px;min-width:16px;text-align:right;">${idx + 1}.</span>`,
+            `<input type="text" data-edit-name="${idx}" value="${escHtml(item.name)}" style="flex:2;${inpS}">`,
+            `<input type="text" data-edit-price="${idx}" value="${escHtml(item.maxPrice || "")}" placeholder="Max price" style="flex:1;${inpS}">`,
+            `<button data-action="save" data-idx="${idx}" style="${saveS}">&#10003;</button>`,
+            `<button data-action="cancel" data-idx="${idx}" style="${cancelS}">&#10007;</button>`,
+          ].join("");
+          const nameInp = row.querySelector("input[data-edit-name]");
+          nameInp && nameInp.focus();
+          nameInp && nameInp.addEventListener("keydown", ev => {
+            if (ev.key === "Enter") { ev.preventDefault(); row.querySelector('[data-action="save"]').click(); }
+            if (ev.key === "Escape") { ev.preventDefault(); renderItemList(); }
+          });
+        } else if (action === "save") {
+          const row = btn.closest("div");
+          const name = (row.querySelector("input[data-edit-name]")?.value || "").trim();
+          const price = (row.querySelector("input[data-edit-price]")?.value || "").trim();
+          if (name && settings.items[idx]) {
+            settings.items[idx].name = name;
+            settings.items[idx].maxPrice = price;
+            lastSearchedItem = null;
+            saveSettings(settings);
+          }
+          renderItemList();
+        } else if (action === "cancel") {
+          renderItemList();
+        } else if (action === "skip") {
+          if (settings.items[idx]) {
+            settings.items[idx].skipped = !settings.items[idx].skipped;
+            saveSettings(settings);
+            renderItemList();
+          }
+        } else {
+          if (action === "remove") settings.items.splice(idx, 1);
+          else if (action === "up" && idx > 0) [settings.items[idx - 1], settings.items[idx]] = [settings.items[idx], settings.items[idx - 1]];
+          else if (action === "down" && idx < settings.items.length - 1) [settings.items[idx], settings.items[idx + 1]] = [settings.items[idx + 1], settings.items[idx]];
+          lastSearchedItem = null;
+          currentIndex = 0;
+          itemStartTs = Date.now();
+          saveSettings(settings);
+          renderItemList();
+        }
+      });
+    }
+
+    // Add item button
+    const addBtn = $("tm-imbuy-add-item");
+    if (addBtn) {
+      const doAdd = () => {
+        const name = ($("tm-imbuy-new-name")?.value || "").trim();
+        let price = ($("tm-imbuy-new-price")?.value || "").trim();
+        if (!name) return;
+        // Fall back to market value when no price was entered
+        if (!price) {
+          const mv = getMarketValue(name);
+          if (mv > 0) price = String(mv);
+        }
+        if (!settings.items.some(i => i.name.toLowerCase() === name.toLowerCase())) {
+          settings.items.push({ name, maxPrice: price });
+          saveSettings(settings);
+          renderItemList();
+          const toggle = $("tm-imbuy-items-toggle");
+          if (toggle && !toggle.open) toggle.open = true;
+        }
+        const nameEl = $("tm-imbuy-new-name");
+        const priceEl = $("tm-imbuy-new-price");
+        if (nameEl) nameEl.value = "";
+        if (priceEl) priceEl.value = "";
+      };
+      addBtn.addEventListener("click", doAdd);
+      $("tm-imbuy-new-name")?.addEventListener("keydown", e => {
+        if (e.key === "Enter") { e.preventDefault(); doAdd(); }
+      });
+    }
+
+    // Autocomplete on name input
+    const nameInput = $("tm-imbuy-new-name");
+    if (nameInput) {
+      setupAutocomplete(nameInput, item => {
+        nameInput.value = item.name;
+        const priceEl = $("tm-imbuy-new-price");
+        if (priceEl && !priceEl.value && item.market_value) {
+          priceEl.value = String(item.market_value);
+        }
+      });
+    }
+
+    // Load items from cache / API on panel init
+    fetchTornItems();
+
     timeoutEl.addEventListener("change", () => {
       settings.noBuySeconds = Math.max(1, parseInt(timeoutEl.value || 20, 10));
       saveSettings(settings);
@@ -796,8 +1085,8 @@
       if (settings.enabled) startMonitor();
       else {
         stopMonitor();
-        const cd = document.getElementById("tm-imbuy-countdown");
-        if (cd) cd.textContent = "";
+        const cd = $("tm-imbuy-countdown");
+        if (cd) cd.innerHTML = '<span style="color:#555;">—</span>';
         setStatus("Auto-buy off.");
       }
     });
@@ -805,61 +1094,58 @@
     setStatus(
       settings.enabled
         ? "Auto-buy on."
-        : `Cash on hand: $${formatNumber(getMoneyOnHand())}. ${
-            settings.items.length
-          } item(s) listed. Add items, then enable.`,
+        : `Cash: $${formatNumber(getMoneyOnHand())}. ${settings.items.length} item(s). Add items then enable.`,
     );
   }
 
   function injectUI() {
     if (!isItemMarketPage()) return;
-    if (document.getElementById(PANEL_ID)) {
-      // Panel already present (desktop) — nothing to do.
-      if (!isMobile()) return;
-    }
+    if (document.getElementById(FAB_ID)) return;
+
+    // Remove any old inline panel left over from a previous script version.
+    document.getElementById(PANEL_ID)?.remove();
 
     const panel = buildPanelElement();
 
+    const fab = document.createElement("button");
+    fab.id = FAB_ID;
+    fab.innerHTML = "&#128722;";
+    fab.style.cssText = [
+      "position:fixed",
+      "bottom:24px",
+      "right:16px",
+      "width:52px",
+      "height:52px",
+      "border-radius:50%",
+      "background:#1a1a1a",
+      "border:2px solid #555",
+      "color:#eee",
+      "font-size:24px",
+      "line-height:1",
+      "z-index:999999",
+      "cursor:pointer",
+      "display:flex",
+      "align-items:center",
+      "justify-content:center",
+      "box-shadow:0 3px 10px rgba(0,0,0,0.6)",
+      "touch-action:manipulation",
+    ].join(";");
+    document.body.appendChild(fab);
+
+    const backdrop = document.createElement("div");
+    backdrop.id = MODAL_ID;
+    backdrop.style.cssText = [
+      "position:fixed",
+      "inset:0",
+      "background:rgba(0,0,0,0.65)",
+      "z-index:999998",
+      "display:none",
+      "align-items:flex-end",
+      "justify-content:center",
+    ].join(";");
+
+    const sheet = document.createElement("div");
     if (isMobile()) {
-      if (document.getElementById(FAB_ID)) return;
-
-      const fab = document.createElement("button");
-      fab.id = FAB_ID;
-      fab.innerHTML = "&#128722;"; // 🛒
-      fab.style.cssText = [
-        "position:fixed",
-        "bottom:24px",
-        "right:16px",
-        "width:52px",
-        "height:52px",
-        "border-radius:50%",
-        "background:#1a1a1a",
-        "border:2px solid #555",
-        "color:#eee",
-        "font-size:24px",
-        "line-height:1",
-        "z-index:999999",
-        "cursor:pointer",
-        "display:flex",
-        "align-items:center",
-        "justify-content:center",
-        "box-shadow:0 3px 10px rgba(0,0,0,0.6)",
-        "touch-action:manipulation",
-      ].join(";");
-      document.body.appendChild(fab);
-
-      const backdrop = document.createElement("div");
-      backdrop.id = MODAL_ID;
-      backdrop.style.cssText = [
-        "position:fixed",
-        "inset:0",
-        "background:rgba(0,0,0,0.65)",
-        "z-index:999998",
-        "display:none",
-        "align-items:flex-end",
-      ].join(";");
-
-      const sheet = document.createElement("div");
       sheet.style.cssText = [
         "background:#1a1a1a",
         "border:1px solid #444",
@@ -870,45 +1156,40 @@
         "max-height:80vh",
         "overflow-y:auto",
       ].join(";");
-
-      const handle = document.createElement("div");
-      handle.style.cssText =
-        "width:40px;height:4px;background:#555;border-radius:2px;margin:0 auto 14px;";
-      sheet.appendChild(handle);
-      sheet.appendChild(panel);
-      backdrop.appendChild(sheet);
-      document.body.appendChild(backdrop);
-
-      const open = () => (backdrop.style.display = "flex");
-      const close = () => (backdrop.style.display = "none");
-      fab.addEventListener("click", () =>
-        backdrop.style.display === "flex" ? close() : open(),
-      );
-      backdrop.addEventListener("click", (e) => {
-        if (e.target === backdrop) close();
-      });
     } else {
-      const target =
-        document.querySelector('[class^="marketWrapper___"]') ||
-        document.querySelector(".content-title") ||
-        document.querySelector("main") ||
-        document.querySelector('[role="main"]') ||
-        document.querySelector(".maincon") ||
-        document.body;
-
-      panel.style.cssText +=
-        ";background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:12px;margin:10px 0;max-width:100%;";
-
-      if (target === document.body) {
-        document.body.insertAdjacentElement("afterbegin", panel);
-      } else if (target.matches('[class^="marketWrapper___"]')) {
-        target.insertBefore(panel, target.firstChild);
-      } else {
-        target.parentNode.insertBefore(panel, target.nextSibling);
-      }
+      sheet.style.cssText = [
+        "background:#1a1a1a",
+        "border:1px solid #444",
+        "border-radius:16px",
+        "padding:16px",
+        "width:480px",
+        "max-width:90vw",
+        "box-sizing:border-box",
+        "max-height:85vh",
+        "overflow-y:auto",
+        "margin-bottom:80px",
+        "box-shadow:0 8px 32px rgba(0,0,0,0.7)",
+      ].join(";");
     }
 
-    wirePanel();
+    const handle = document.createElement("div");
+    handle.style.cssText =
+      "width:40px;height:4px;background:#555;border-radius:2px;margin:0 auto 14px;";
+    sheet.appendChild(handle);
+    sheet.appendChild(panel);
+    backdrop.appendChild(sheet);
+    document.body.appendChild(backdrop);
+
+    const open = () => (backdrop.style.display = "flex");
+    const close = () => (backdrop.style.display = "none");
+    fab.addEventListener("click", () =>
+      backdrop.style.display === "flex" ? close() : open(),
+    );
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) close();
+    });
+
+    wirePanel(panel);
   }
 
   // -------------------------------------------------------------------------
@@ -924,38 +1205,27 @@
 
   // Re-inject on SPA re-renders (panel/FAB removed by React).
   const uiObserver = new MutationObserver(() => {
-    if (isMobile()) {
-      if (
-        !document.getElementById(FAB_ID) &&
-        !document.getElementById(PANEL_ID)
-      ) {
-        injectUI();
-      }
-    } else if (!document.getElementById(PANEL_ID)) {
-      injectUI();
-    }
+    if (!document.getElementById(FAB_ID)) injectUI();
   });
   uiObserver.observe(document.documentElement, {
     childList: true,
     subtree: true,
   });
 
-  if (isMobile()) {
-    setInterval(() => {
-      // Remove the FAB/modal if we've navigated away from the item market
-      // (the SPA can change sid without a full reload).
-      if (!isItemMarketPage()) {
-        document.getElementById(FAB_ID)?.remove();
-        document.getElementById(MODAL_ID)?.remove();
-        return;
-      }
-      if (!document.getElementById(FAB_ID)) {
-        try {
-          injectUI();
-        } catch (e) {}
-      }
-    }, 1000);
-  }
+  setInterval(() => {
+    if (!isItemMarketPage()) {
+      document.getElementById(FAB_ID)?.remove();
+      document.getElementById(MODAL_ID)?.remove();
+      document.getElementById(PANEL_ID)?.remove();
+      return;
+    }
+    // Remove any stray inline panel (old script version remnant).
+    const inlinePanel = document.getElementById(PANEL_ID);
+    if (inlinePanel && !inlinePanel.closest(`#${MODAL_ID}`)) inlinePanel.remove();
+    if (!document.getElementById(FAB_ID)) {
+      try { injectUI(); } catch (e) {}
+    }
+  }, 1000);
 
   startMonitor();
 
@@ -986,3 +1256,4 @@
     console.log(LOG, "helpers available at window.tmItemMarketBuy");
   } catch (e) {}
 })();
+
