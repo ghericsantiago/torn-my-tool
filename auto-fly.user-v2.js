@@ -1,4 +1,4 @@
-// ==UserScript==
+﻿// ==UserScript==
 // @name         Torn Flight Planner v2
 // @namespace    http://tampermonkey.net/
 // @version      2.0
@@ -8,7 +8,7 @@
 // @match        https://www.torn.com/index.php
 // @match        https://www.torn.com/page.php?sid=travel*
 // @match        https://www.torn.com/gym.php
-// @grant        none
+// @grant        GM_xmlhttpRequest
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -21,6 +21,15 @@
   const SHOPPING_LIST_KEY = "tmShoppingList"; // shared with v1
   const COOLDOWN_KEY = "tmAutoFlyLast";
   const API_KEY = "v6Yo75UQIYvWYrhT";
+
+  // =================== CLOUD SYNC ===================
+  // Fill these in once — see README or instructions below.
+  // 1. Go to https://github.com/settings/tokens/new → generate a token with "gist" scope.
+  // 2. Go to https://gist.github.com → create a NEW secret gist, file name: torn-my-tool-settings.json, content: {}
+  // 3. Copy the Gist ID from the URL (the long hex string after your username).
+  const GIST_TOKEN = "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";
+  const GIST_ID    = "bd5625e0bb394474941befb868d9af6d";
+  const GIST_FILE  = "torn-my-tool-settings.json";
 
   const VALID_DESTINATIONS = [
     "Mexico", "Cayman Islands", "Canada", "Hawaii",
@@ -67,6 +76,7 @@
   }
   function saveOptions(o) {
     try { localStorage.setItem(OPTS_KEY, JSON.stringify(o)); } catch (e) {}
+    scheduleCloudSave("autofly_opts", o);
   }
 
   // =================== FLIGHT PLAN ===================
@@ -84,6 +94,7 @@
   }
   function saveFlightPlan(plan) {
     try { localStorage.setItem(PLAN_KEY, JSON.stringify(plan)); } catch (e) {}
+    scheduleCloudSave("autofly_plan", plan);
   }
   function genId() {
     return Math.random().toString(36).slice(2, 10);
@@ -137,6 +148,93 @@
   }
   function saveShoppingList(list) {
     try { localStorage.setItem(SHOPPING_LIST_KEY, JSON.stringify(list)); } catch (e) {}
+    scheduleCloudSave("autofly_shopping", list);
+  }
+
+  // =================== CLOUD HELPERS ===================
+  let _cloudSavePending = {};
+  let _cloudSaveTimer = null;
+
+  // GM_xmlhttpRequest wrapper — bypasses Torn's CSP that blocks api.github.com
+  function gmFetch(url, { method = "GET", headers = {}, body } = {}) {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method, url, headers, data: body,
+        onload: (r) => resolve({
+          ok: r.status >= 200 && r.status < 300,
+          status: r.status,
+          json: () => Promise.resolve(JSON.parse(r.responseText)),
+        }),
+        onerror: () => reject(new Error("GM request failed")),
+        ontimeout: () => reject(new Error("GM request timed out")),
+      });
+    });
+  }
+
+  async function cloudLoad() {
+    if (!GIST_TOKEN || GIST_TOKEN === "YOUR_GITHUB_TOKEN_HERE") return {};
+    try {
+      const r = await gmFetch(`https://api.github.com/gists/${GIST_ID}`, {
+        headers: { Authorization: `token ${GIST_TOKEN}`, Accept: "application/vnd.github.v3+json" }
+      });
+      if (!r.ok) return {};
+      const d = await r.json();
+      return JSON.parse(d.files?.[GIST_FILE]?.content || "{}");
+    } catch(e) { console.warn("[AutoFly2] Cloud load failed:", e); return {}; }
+  }
+
+  function scheduleCloudSave(section, data) {
+    _cloudSavePending[section] = JSON.parse(JSON.stringify(data));
+    if (_cloudSaveTimer) clearTimeout(_cloudSaveTimer);
+    _cloudSaveTimer = setTimeout(async () => {
+      if (!GIST_TOKEN || GIST_TOKEN === "YOUR_GITHUB_TOKEN_HERE") return;
+      const pending = Object.assign({}, _cloudSavePending);
+      _cloudSavePending = {};
+      try {
+        const all = await cloudLoad();
+        Object.assign(all, pending);
+        await gmFetch(`https://api.github.com/gists/${GIST_ID}`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `token ${GIST_TOKEN}`,
+            Accept: "application/vnd.github.v3+json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(all, null, 2) } } })
+        });
+        console.log("[AutoFly2] Cloud settings saved");
+      } catch(e) { console.warn("[AutoFly2] Cloud save failed:", e); }
+    }, 1500);
+  }
+
+  async function initCloudSync() {
+    const cloud = await cloudLoad();
+    if (!cloud || !Object.keys(cloud).length) return;
+
+    if (cloud.autofly_opts && typeof cloud.autofly_opts === "object") {
+      try { localStorage.setItem(OPTS_KEY, JSON.stringify(cloud.autofly_opts)); } catch(e) {}
+      options = loadOptions();
+      const setChk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = !!v; };
+      const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = String(v); };
+      setChk("tm-af2-auto-enabled", options.autoEnabled);
+      setChk("tm-af2-fly-back", options.flyBackEnabled);
+      setChk("tm-af2-skip-warnings", options.skipWarnings);
+      setChk("tm-af2-repeat-plan", options.repeatPlan);
+      setVal("tm-af2-prefly-delay", options.preflyDelay ?? 5);
+      setChk("tm-af2-gym-enabled", options.gymEnabled);
+      setVal("tm-af2-gym-stat", options.gymStat || "strength");
+      setChk("tm-af2-hold-nerve", options.holdIfNerveFull);
+      if (options.autoEnabled) startAutoCheck(); else stopAutoCheck();
+    }
+    if (cloud.autofly_plan && Array.isArray(cloud.autofly_plan)) {
+      try { localStorage.setItem(PLAN_KEY, JSON.stringify(cloud.autofly_plan)); } catch(e) {}
+      renderFlightPlan();
+    }
+    if (cloud.autofly_shopping && Array.isArray(cloud.autofly_shopping)) {
+      try { localStorage.setItem(SHOPPING_LIST_KEY, JSON.stringify(cloud.autofly_shopping)); } catch(e) {}
+      renderShoppingList();
+    }
+    console.log("[AutoFly2] Cloud settings synced");
   }
 
   // =================== STATE ===================
@@ -1502,6 +1600,7 @@
   startAutoCheck();
   initHospitalWatch();
   initTravelWatch();
+  initCloudSync().catch(e => console.warn("[AutoFly2] initCloudSync error:", e));
   if (isGymPage()) {
     options = loadOptions();
     if (options.gymEnabled) processGymTraining().catch(e => console.warn("[AutoFly2] gymTraining error", e));

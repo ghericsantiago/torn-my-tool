@@ -6,7 +6,7 @@
 // @author       GitHub Copilot
 // @match        https://www.torn.com/page.php*
 // @match        https://www.torn.com/imarket.php*
-// @grant        none
+// @grant        GM_xmlhttpRequest
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -15,6 +15,11 @@
 
   const LOG = "[ItemMarketBuy]";
   const KEY = "tmItemMarketBuySettings";
+
+  // =================== CLOUD SYNC ===================
+  const GIST_TOKEN = "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";
+  const GIST_ID    = "bd5625e0bb394474941befb868d9af6d";
+  const GIST_FILE  = "torn-my-tool-settings.json";
   const PANEL_ID = "tm-imbuy-panel";
   const FAB_ID = "tm-imbuy-fab";
   const MODAL_ID = "tm-imbuy-modal";
@@ -83,6 +88,81 @@
     try {
       localStorage.setItem(KEY, JSON.stringify(s));
     } catch (e) {}
+    scheduleCloudSave("itemmarket", s);
+  }
+
+  // =================== CLOUD HELPERS ===================
+  let _cloudSavePending = {};
+  let _cloudSaveTimer = null;
+
+  function gmFetch(url, { method = "GET", headers = {}, body } = {}) {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method, url, headers, data: body,
+        onload: (r) => resolve({
+          ok: r.status >= 200 && r.status < 300,
+          status: r.status,
+          json: () => Promise.resolve(JSON.parse(r.responseText)),
+        }),
+        onerror: () => reject(new Error("GM request failed")),
+        ontimeout: () => reject(new Error("GM request timed out")),
+      });
+    });
+  }
+
+  async function cloudLoad() {
+    if (!GIST_TOKEN || GIST_TOKEN === "YOUR_GITHUB_TOKEN_HERE") return {};
+    try {
+      const r = await gmFetch(`https://api.github.com/gists/${GIST_ID}`, {
+        headers: { Authorization: `token ${GIST_TOKEN}`, Accept: "application/vnd.github.v3+json" }
+      });
+      if (!r.ok) return {};
+      const d = await r.json();
+      return JSON.parse(d.files?.[GIST_FILE]?.content || "{}");
+    } catch(e) { console.warn(LOG, "Cloud load failed:", e); return {}; }
+  }
+
+  function scheduleCloudSave(section, data) {
+    _cloudSavePending[section] = JSON.parse(JSON.stringify(data));
+    if (_cloudSaveTimer) clearTimeout(_cloudSaveTimer);
+    _cloudSaveTimer = setTimeout(async () => {
+      if (!GIST_TOKEN || GIST_TOKEN === "YOUR_GITHUB_TOKEN_HERE") return;
+      const pending = Object.assign({}, _cloudSavePending);
+      _cloudSavePending = {};
+      try {
+        const all = await cloudLoad();
+        Object.assign(all, pending);
+        await gmFetch(`https://api.github.com/gists/${GIST_ID}`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `token ${GIST_TOKEN}`,
+            Accept: "application/vnd.github.v3+json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(all, null, 2) } } })
+        });
+        console.log(LOG, "Cloud settings saved");
+      } catch(e) { console.warn(LOG, "Cloud save failed:", e); }
+    }, 1500);
+  }
+
+  async function initCloudSync() {
+    const cloud = await cloudLoad();
+    if (!cloud.itemmarket) return;
+    const merged = Object.assign({}, DEFAULTS, cloud.itemmarket);
+    if (!merged.apiKey) merged.apiKey = DEFAULTS.apiKey;
+    try { localStorage.setItem(KEY, JSON.stringify(merged)); } catch(e) {}
+    settings = merged;
+    const panel = document.getElementById(PANEL_ID);
+    if (panel) {
+      const timeoutEl = panel.querySelector("#tm-imbuy-timeout");
+      const enabledEl = panel.querySelector("#tm-imbuy-enabled");
+      const itemsEl   = panel.querySelector("#tm-imbuy-items");
+      if (timeoutEl) timeoutEl.value = String(settings.noBuySeconds ?? 20);
+      if (enabledEl) enabledEl.checked = !!settings.enabled;
+      if (itemsEl)   itemsEl.value = serializeItems(settings.items);
+    }
+    console.log(LOG, "Cloud settings synced");
   }
 
   // The item market is a hash-routed SPA at page.php?sid=ItemMarket
@@ -1228,6 +1308,7 @@
   }, 1000);
 
   startMonitor();
+  initCloudSync().catch(e => console.warn(LOG, "initCloudSync error:", e));
 
   // Debug helpers for console testing.
   try {

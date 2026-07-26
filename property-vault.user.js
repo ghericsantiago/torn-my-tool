@@ -1,11 +1,11 @@
-// ==UserScript==
+﻿// ==UserScript==
 // @name         Torn Property Vault Auto Withdraw/Deposit
 // @namespace    http://tampermonkey.net/
 // @version      1.4
 // @description  Maintain a target cash-on-hand value by auto depositing or withdrawing from the property vault. Mobile floating panel supported.
 // @author       GitHub Copilot
 // @match        https://www.torn.com/properties.php*
-// @grant        none
+// @grant        GM_xmlhttpRequest
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -68,6 +68,11 @@
   const STORAGE_KEY = "tornVaultAutoSettings";
   const api = new TornAPI("v6Yo75UQIYvWYrhT");
 
+  // =================== CLOUD SYNC ===================
+  const GIST_TOKEN = "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";
+  const GIST_ID    = "bd5625e0bb394474941befb868d9af6d";
+  const GIST_FILE  = "torn-my-tool-settings.json";
+
   const loadSettings = (defaults) => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
@@ -85,7 +90,78 @@
     } catch (error) {
       console.warn("Vault script failed to save settings", error);
     }
+    scheduleCloudSave("vault", CONFIG);
   };
+
+  // =================== CLOUD HELPERS ===================
+  let _cloudSavePending = {};
+  let _cloudSaveTimer = null;
+
+  function gmFetch(url, { method = "GET", headers = {}, body } = {}) {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method, url, headers, data: body,
+        onload: (r) => resolve({
+          ok: r.status >= 200 && r.status < 300,
+          status: r.status,
+          json: () => Promise.resolve(JSON.parse(r.responseText)),
+        }),
+        onerror: () => reject(new Error("GM request failed")),
+        ontimeout: () => reject(new Error("GM request timed out")),
+      });
+    });
+  }
+
+  async function cloudLoad() {
+    if (!GIST_TOKEN || GIST_TOKEN === "YOUR_GITHUB_TOKEN_HERE") return {};
+    try {
+      const r = await gmFetch(`https://api.github.com/gists/${GIST_ID}`, {
+        headers: { Authorization: `token ${GIST_TOKEN}`, Accept: "application/vnd.github.v3+json" }
+      });
+      if (!r.ok) return {};
+      const d = await r.json();
+      return JSON.parse(d.files?.[GIST_FILE]?.content || "{}");
+    } catch(e) { console.warn("[Vault] Cloud load failed:", e); return {}; }
+  }
+
+  function scheduleCloudSave(section, data) {
+    _cloudSavePending[section] = JSON.parse(JSON.stringify(data));
+    if (_cloudSaveTimer) clearTimeout(_cloudSaveTimer);
+    _cloudSaveTimer = setTimeout(async () => {
+      if (!GIST_TOKEN || GIST_TOKEN === "YOUR_GITHUB_TOKEN_HERE") return;
+      const pending = Object.assign({}, _cloudSavePending);
+      _cloudSavePending = {};
+      try {
+        const all = await cloudLoad();
+        Object.assign(all, pending);
+        await gmFetch(`https://api.github.com/gists/${GIST_ID}`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `token ${GIST_TOKEN}`,
+            Accept: "application/vnd.github.v3+json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(all, null, 2) } } })
+        });
+        console.log("[Vault] Cloud settings saved");
+      } catch(e) { console.warn("[Vault] Cloud save failed:", e); }
+    }, 1500);
+  }
+
+  async function initCloudSync() {
+    const cloud = await cloudLoad();
+    if (!cloud.vault) return;
+    Object.assign(CONFIG, cloud.vault);
+    autoMaintain = CONFIG.autoMaintainEnabled;
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(CONFIG)); } catch(e) {}
+    const targetInput      = document.getElementById("tm-target-cash");
+    const autoMaintainInp  = document.getElementById("tm-auto-maintain");
+    const autoAttackInp    = document.getElementById("tm-auto-attack-deposit");
+    if (targetInput)     targetInput.value           = formatNumber(parseAmount(CONFIG.targetCashOnHand));
+    if (autoMaintainInp) autoMaintainInp.checked      = !!CONFIG.autoMaintainEnabled;
+    if (autoAttackInp)   autoAttackInp.checked         = !!CONFIG.autoAttackDepositEnabled;
+    console.log("[Vault] Cloud settings synced");
+  }
 
   const CONFIG = loadSettings({
     targetCashOnHand: "500000",
@@ -809,9 +885,13 @@
   const initWhenReady = () => {
     if (document.body) {
       init();
+      initCloudSync().catch(e => console.warn("[Vault] initCloudSync error:", e));
     } else {
       waitForNode("body").then((node) => {
-        if (node) init();
+        if (node) {
+          init();
+          initCloudSync().catch(e => console.warn("[Vault] initCloudSync error:", e));
+        }
       });
     }
   };
