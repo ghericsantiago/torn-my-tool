@@ -153,8 +153,10 @@
   }
 
   // =================== CLOUD HELPERS ===================
+  const CLOUD_POLL_KEY = "tmCloudSyncPoll";
   let _cloudSavePending = {};
   let _cloudSaveTimer = null;
+  let _cloudPollIntervalId = null;
 
   // GM_xmlhttpRequest wrapper — bypasses Torn's CSP that blocks api.github.com
   function gmFetch(url, { method = "GET", headers = {}, body } = {}) {
@@ -255,8 +257,17 @@
     console.log("[AutoFly2] Cloud settings updated from remote");
   }
 
+  function isCloudPollEnabled() {
+    const v = localStorage.getItem(CLOUD_POLL_KEY);
+    return v === null ? true : v === "true";
+  }
   function startCloudPoll() {
-    setInterval(pollCloudSync, 1000);
+    if (!isCloudPollEnabled()) { console.log("[AutoFly2] Cloud polling disabled"); return; }
+    if (_cloudPollIntervalId) return;
+    _cloudPollIntervalId = setInterval(pollCloudSync, 1000);
+  }
+  function stopCloudPoll() {
+    if (_cloudPollIntervalId) { clearInterval(_cloudPollIntervalId); _cloudPollIntervalId = null; }
   }
 
   // =================== STATE ===================
@@ -1407,6 +1418,9 @@
               style="width:44px;padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;text-align:center;">
             s
           </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Poll the Gist cloud every second to sync settings across devices. Disable to reduce GitHub API usage.">
+            <input id="tm-af2-cloud-poll" type="checkbox"> Cloud sync
+          </label>
         </div>
 
         <!-- Flight Plan -->
@@ -1527,6 +1541,14 @@
         options.preflyDelay = v;
         saveOptions(options);
       });
+      const cloudPollEl = document.getElementById("tm-af2-cloud-poll");
+      if (cloudPollEl) {
+        cloudPollEl.checked = isCloudPollEnabled();
+        cloudPollEl.addEventListener("change", () => {
+          localStorage.setItem(CLOUD_POLL_KEY, String(cloudPollEl.checked));
+          cloudPollEl.checked ? startCloudPoll() : stopCloudPoll();
+        });
+      }
     }
 
     // Gym controls

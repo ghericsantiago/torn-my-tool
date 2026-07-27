@@ -92,8 +92,10 @@
   }
 
   // =================== CLOUD HELPERS ===================
+  const CLOUD_POLL_KEY = "tmCloudSyncPoll";
   let _cloudSavePending = {};
   let _cloudSaveTimer = null;
+  let _cloudPollIntervalId = null;
 
   function gmFetch(url, { method = "GET", headers = {}, body } = {}) {
     return new Promise((resolve, reject) => {
@@ -180,8 +182,17 @@
     console.log(LOG, "Cloud settings updated from remote");
   }
 
+  function isCloudPollEnabled() {
+    const v = localStorage.getItem(CLOUD_POLL_KEY);
+    return v === null ? true : v === "true";
+  }
   function startCloudPoll() {
-    setInterval(pollCloudSync, 1000);
+    if (!isCloudPollEnabled()) { console.log("[IMBuy] Cloud polling disabled"); return; }
+    if (_cloudPollIntervalId) return;
+    _cloudPollIntervalId = setInterval(pollCloudSync, 1000);
+  }
+  function stopCloudPoll() {
+    if (_cloudPollIntervalId) { clearInterval(_cloudPollIntervalId); _cloudPollIntervalId = null; }
   }
 
   // The item market is a hash-routed SPA at page.php?sid=ItemMarket
@@ -1049,6 +1060,9 @@
               style="width:52px;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;text-align:center;">
             s
           </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Poll Gist cloud every second to sync settings across devices. Disable to reduce GitHub API usage.">
+            <input id="tm-imbuy-cloud-poll" type="checkbox"> Cloud sync
+          </label>
         </div>
 
       </div>
@@ -1189,6 +1203,14 @@
         setStatus("Auto-buy off.");
       }
     });
+    const cloudPollEl = $("tm-imbuy-cloud-poll");
+    if (cloudPollEl) {
+      cloudPollEl.checked = isCloudPollEnabled();
+      cloudPollEl.addEventListener("change", () => {
+        localStorage.setItem(CLOUD_POLL_KEY, String(cloudPollEl.checked));
+        cloudPollEl.checked ? startCloudPoll() : stopCloudPoll();
+      });
+    }
 
     setStatus(
       settings.enabled

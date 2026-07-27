@@ -94,8 +94,10 @@
   };
 
   // =================== CLOUD HELPERS ===================
+  const CLOUD_POLL_KEY = "tmCloudSyncPoll";
   let _cloudSavePending = {};
   let _cloudSaveTimer = null;
+  let _cloudPollIntervalId = null;
 
   function gmFetch(url, { method = "GET", headers = {}, body } = {}) {
     return new Promise((resolve, reject) => {
@@ -180,8 +182,17 @@
     console.log("[Vault] Cloud settings updated from remote");
   }
 
+  function isCloudPollEnabled() {
+    const v = localStorage.getItem(CLOUD_POLL_KEY);
+    return v === null ? true : v === "true";
+  }
   function startCloudPoll() {
-    setInterval(pollCloudSync, 1000);
+    if (!isCloudPollEnabled()) { console.log("[Vault] Cloud polling disabled"); return; }
+    if (_cloudPollIntervalId) return;
+    _cloudPollIntervalId = setInterval(pollCloudSync, 1000);
+  }
+  function stopCloudPoll() {
+    if (_cloudPollIntervalId) { clearInterval(_cloudPollIntervalId); _cloudPollIntervalId = null; }
   }
 
   const CONFIG = loadSettings({
@@ -697,6 +708,9 @@
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Immediately deposit all cash to vault when an attack is detected">
             <input id="tm-auto-attack-deposit" type="checkbox"${CONFIG.autoAttackDepositEnabled ? " checked" : ""}> Deposit on attack
           </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Poll Gist cloud every second to sync settings across devices. Disable to reduce GitHub API usage.">
+            <input id="tm-vault-cloud-poll" type="checkbox"> Cloud sync
+          </label>
         </div>
 
       </div>
@@ -739,6 +753,14 @@
       CONFIG.autoAttackDepositEnabled = autoAttackDepositInput.checked;
       saveSettings();
     });
+    const cloudPollEl = document.getElementById("tm-vault-cloud-poll");
+    if (cloudPollEl) {
+      cloudPollEl.checked = isCloudPollEnabled();
+      cloudPollEl.addEventListener("change", () => {
+        localStorage.setItem(CLOUD_POLL_KEY, String(cloudPollEl.checked));
+        cloudPollEl.checked ? startCloudPoll() : stopCloudPoll();
+      });
+    }
   };
 
   const buildControlPanel = () => {
