@@ -68,11 +68,11 @@
   function loadOptions() {
     try {
       return Object.assign(
-        { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5, gymEnabled: false, gymStat: "strength", holdIfNerveFull: false },
+        { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5, gymEnabled: false, gymStat: "strength", holdIfNerveFull: false, autoRehabEnabled: false, minAddictionLevel: 1 },
         JSON.parse(localStorage.getItem(OPTS_KEY) || "{}")
       );
     } catch (e) {
-      return { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5, gymEnabled: false, gymStat: "strength", holdIfNerveFull: false };
+      return { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5, gymEnabled: false, gymStat: "strength", holdIfNerveFull: false, autoRehabEnabled: false, minAddictionLevel: 1 };
     }
   }
   function saveOptions(o) {
@@ -225,6 +225,8 @@
       setChk("tm-af2-gym-enabled", options.gymEnabled);
       setVal("tm-af2-gym-stat", options.gymStat || "strength");
       setChk("tm-af2-hold-nerve", options.holdIfNerveFull);
+      setChk("tm-af2-rehab-enabled", options.autoRehabEnabled);
+      setVal("tm-af2-min-addiction", options.minAddictionLevel ?? 1);
       if (options.autoEnabled) startAutoCheck(); else stopAutoCheck();
     }
     if (cloud.autofly_plan && Array.isArray(cloud.autofly_plan)) {
@@ -540,6 +542,64 @@
       travelReloadTimer = setTimeout(() => { location.reload(); }, secs * 1000 + 3000);
     }
     startTravelDomPoller();
+  }
+
+  // =================== OVERSEAS ERROR WATCH ===================
+  function watchForOverseasError() {
+    const MSG = "You must be overseas to do this action.";
+    const hiddenEls = new Set();
+
+    function isVisible(el) {
+      let curr = el;
+      while (curr && curr !== document.documentElement) {
+        const s = window.getComputedStyle(curr);
+        if (s.display === "none" || s.visibility === "hidden" || parseFloat(s.opacity) === 0) return false;
+        curr = curr.parentElement;
+      }
+      return true;
+    }
+
+    function findMsgEl(root) {
+      if (!root || root.nodeType !== Node.ELEMENT_NODE) return null;
+      if (!(root.textContent || "").includes(MSG)) return null;
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode())) {
+        if ((node.nodeValue || "").includes(MSG)) return node.parentElement;
+      }
+      return null;
+    }
+
+    function checkAndAct(root) {
+      const el = findMsgEl(root);
+      if (!el) return false;
+      if (isVisible(el)) {
+        console.log("[AutoFly2] Overseas error visible — reloading");
+        location.reload();
+        return true;
+      }
+      hiddenEls.add(el);
+      return false;
+    }
+
+    if (document.body) checkAndAct(document.body);
+
+    const obs = new MutationObserver(mutations => {
+      for (const m of mutations) {
+        if (m.type === "childList") {
+          for (const node of m.addedNodes) {
+            if (node.nodeType === Node.ELEMENT_NODE && checkAndAct(node)) return;
+          }
+        }
+        if (hiddenEls.size > 0) {
+          for (const el of hiddenEls) {
+            if (!document.body.contains(el)) { hiddenEls.delete(el); continue; }
+            if (isVisible(el)) { hiddenEls.delete(el); console.log("[AutoFly2] Overseas error became visible — reloading"); location.reload(); return; }
+          }
+        }
+      }
+    });
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["style", "class"] });
   }
 
   // =================== TRAVEL CONTROLS ===================
@@ -863,17 +923,146 @@
     return true;
   }
 
+  // =================== REHAB ===================
+  function isRehabPage() {
+    return document.body.dataset.page === "rehab" || !!document.querySelector(".travel-rehab .rehab");
+  }
+
+  function getAddictionLevelFromDOM() {
+    if (!document.querySelector(".cont-gray.rehab.addicted")) return 0;
+    const slider = document.querySelector(".range-slider-data[data-percentages]");
+    if (!slider) return 1;
+    const val = parseInt(slider.getAttribute("value") || "0", 10);
+    try {
+      const percs = JSON.parse(slider.getAttribute("data-percentages") || "{}");
+      const sorted = Object.entries(percs).map(([l, p]) => [parseInt(l, 10), Number(p)]).sort((a, b) => a[1] - b[1]);
+      for (const [level, pct] of sorted) {
+        if (val <= pct) return level;
+      }
+    } catch (e) {}
+    return 1;
+  }
+
+  async function getAddictionLevelFromAPI() {
+    try {
+      const data = await apiRequest("user", "profile");
+      if (data.drugs && typeof data.drugs.addiction_level === "number") return data.drugs.addiction_level;
+      if (typeof data.addiction_level === "number") return data.addiction_level;
+    } catch (e) { console.warn("[AutoFly2] Addiction API failed", e); }
+    return -1;
+  }
+
+  async function processRehab() {
+    options = loadOptions();
+
+    await new Promise(resolve => {
+      if (document.querySelector(".rehab-btn-area")) return resolve();
+      const obs = new MutationObserver(() => {
+        if (document.querySelector(".rehab-btn-area")) { obs.disconnect(); resolve(); }
+      });
+      obs.observe(document.body, { childList: true, subtree: true });
+      setTimeout(() => { obs.disconnect(); resolve(); }, 8000);
+    });
+    await wait(500);
+
+    const addictionLevel = getAddictionLevelFromDOM();
+    if (addictionLevel === 0) {
+      console.log("[AutoFly2] Not addicted — skipping rehab");
+      return false;
+    }
+    if (addictionLevel <= options.minAddictionLevel) {
+      console.log(`[AutoFly2] Addiction ${addictionLevel} <= threshold ${options.minAddictionLevel} — skipping rehab`);
+      return false;
+    }
+
+    const rehabBtn = document.querySelector(".rehab-btn-area.addicted button.torn-btn");
+    if (!rehabBtn) { console.warn("[AutoFly2] Rehab button not found"); return false; }
+
+    setPanelStatus(`Auto-Rehab: level ${addictionLevel} — rehabilitating…`, "#f0a500");
+    console.log(`[AutoFly2] Rehab: clicking REHABILITATE (level ${addictionLevel})`);
+    safeClick(rehabBtn);
+
+    await new Promise(resolve => {
+      const isDone = () => {
+        const s = document.querySelector(".success-rehab");
+        if (s && s.innerHTML.trim()) return true;
+        if (!document.querySelector(".rehab-btn-area.addicted")) return true;
+        return false;
+      };
+      if (isDone()) return resolve();
+      const obs = new MutationObserver(() => { if (isDone()) { obs.disconnect(); resolve(); } });
+      obs.observe(document.body, { childList: true, subtree: true });
+      setTimeout(() => { obs.disconnect(); resolve(); }, 10000);
+    });
+
+    await wait(1000);
+    const newLevel = getAddictionLevelFromDOM();
+    if (newLevel > options.minAddictionLevel) {
+      console.log(`[AutoFly2] Still at level ${newLevel} — rehabbing again`);
+      return processRehab();
+    }
+
+    setPanelStatus("Auto-Rehab: done — shopping…", "#44cc88");
+    console.log("[AutoFly2] Rehab complete");
+    return true;
+  }
+
+  async function checkAndGoToRehab() {
+    options = loadOptions();
+    if (!options.autoRehabEnabled) return false;
+    if (getActiveFlight()) return false;
+
+    const addictionLevel = await getAddictionLevelFromAPI();
+    if (addictionLevel < 0 || addictionLevel <= options.minAddictionLevel) return false;
+
+    const plan = loadFlightPlan();
+    if (plan.some(f => f.destination === "Switzerland" && f.status !== "done")) return false;
+
+    console.log(`[AutoFly2] Addiction ${addictionLevel} > threshold ${options.minAddictionLevel} — going to Switzerland for rehab`);
+    setPanelStatus(`Addiction level ${addictionLevel} — going to Switzerland for rehab…`, "#f0a500");
+
+    if (!isTravelPage()) {
+      await wait(500);
+      location.href = "/page.php?sid=travel";
+      return true;
+    }
+
+    await clickTravelDestination("Switzerland");
+    await wait(1500);
+
+    const preflyDelay = Math.max(0, options.preflyDelay ?? 5);
+    for (let i = preflyDelay; i > 0; i--) {
+      setPanelStatus(`Rehab flight to Switzerland in ${i}s…`, "#f0a500");
+      await wait(1000);
+    }
+
+    if (options.skipWarnings && clickFlyContinueControl()) {
+      sessionStorage.setItem(COOLDOWN_KEY, String(Date.now()));
+      await wait(500); location.reload(); return true;
+    }
+    if (clickFlyControl()) {
+      sessionStorage.setItem(COOLDOWN_KEY, String(Date.now()));
+      console.log("[AutoFly2] Rehab flight: Travel clicked for Switzerland");
+      if (options.skipWarnings) { await waitForContinueAndClick(5000); await wait(500); }
+      location.reload(); return true;
+    }
+    return false;
+  }
+
   // =================== AUTO-FLY CHECK ===================
   // Runs every 60s when autoEnabled. Compares current TCT to flight plan.
   async function autoFlyCheck() {
     options = loadOptions();
     await wait(500);
 
-    // Abroad: shop and fly home regardless of autoEnabled — flyBackEnabled still controls it
+    // Abroad: rehab (if Switzerland) + shop and fly home regardless of autoEnabled — flyBackEnabled still controls it
     if (isAbroad()) {
       if (options.flyBackEnabled) {
         const waiting = await scheduleReviveReloadIfHospitalized();
-        if (!waiting) await processAbroadShopping();
+        if (!waiting) {
+          if (options.autoRehabEnabled && isRehabPage()) await processRehab();
+          await processAbroadShopping();
+        }
       } else {
         console.log("[AutoFly2] Abroad, fly-back disabled");
       }
@@ -948,6 +1137,10 @@
     // Gym takes priority over flights — go train if energy is full
     const wentToGym = await checkAndGoToGym();
     if (wentToGym) return;
+
+    // Rehab check — go to Switzerland if addiction is above threshold
+    const wentToRehab = await checkAndGoToRehab();
+    if (wentToRehab) return;
 
     // Hold if nerve is full
     if (options.holdIfNerveFull) {
@@ -1265,6 +1458,18 @@
                 <input id="tm-af2-hold-nerve" type="checkbox"> Hold flight if nerve full &#x26A1;
               </label>
             </div>
+            <div style="display:flex;flex-direction:column;gap:6px;border-left:1px solid #333;padding-left:12px;">
+              <span style="color:#666;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;">Rehab</span>
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Auto-travel to Switzerland and rehab before shopping when addiction exceeds the threshold. Also rehabbing in Switzerland before shopping when already there.">
+                <input id="tm-af2-rehab-enabled" type="checkbox"> Auto-Rehab &#x1F489; (Switzerland)
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Rehab triggers only when addiction level is strictly above this value (1–4)">
+                Min addiction:
+                <input id="tm-af2-min-addiction" type="number" min="1" max="4" step="1"
+                  style="width:40px;padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;text-align:center;">
+                <span style="color:#666;font-size:10px;">(rehabs when &gt; this)</span>
+              </label>
+            </div>
           </div>
         </details>
 
@@ -1344,6 +1549,23 @@
       holdNerveEl.checked = !!options.holdIfNerveFull;
       holdNerveEl.addEventListener("change", () => {
         options.holdIfNerveFull = !!holdNerveEl.checked; saveOptions(options);
+      });
+    }
+    const rehabEnabledEl = document.getElementById("tm-af2-rehab-enabled");
+    if (rehabEnabledEl) {
+      rehabEnabledEl.checked = !!options.autoRehabEnabled;
+      rehabEnabledEl.addEventListener("change", () => {
+        options.autoRehabEnabled = !!rehabEnabledEl.checked; saveOptions(options);
+      });
+    }
+    const minAddictionEl = document.getElementById("tm-af2-min-addiction");
+    if (minAddictionEl) {
+      minAddictionEl.value = String(options.minAddictionLevel ?? 1);
+      minAddictionEl.addEventListener("change", () => {
+        const v = Math.max(1, Math.min(4, parseInt(minAddictionEl.value, 10) || 1));
+        minAddictionEl.value = String(v);
+        options.minAddictionLevel = v;
+        saveOptions(options);
       });
     }
 
@@ -1654,6 +1876,7 @@
   startAutoCheck();
   initHospitalWatch();
   initTravelWatch();
+  watchForOverseasError();
   initCloudSync().catch(e => console.warn("[AutoFly2] initCloudSync error:", e));
   startCloudPoll();
   if (isGymPage()) {
