@@ -95,6 +95,7 @@
   const CLOUD_POLL_KEY = "tmCloudSyncPoll";
   let _cloudSavePending = {};
   let _cloudSaveTimer = null;
+  let _cloudSaveInProgress = false;
   let _cloudPollIntervalId = null;
 
   function gmFetch(url, { method = "GET", headers = {}, body } = {}) {
@@ -131,6 +132,8 @@
       if (!GIST_TOKEN || GIST_TOKEN === "YOUR_GITHUB_TOKEN_HERE") return;
       const pending = Object.assign({}, _cloudSavePending);
       _cloudSavePending = {};
+      _cloudSaveTimer = null;
+      _cloudSaveInProgress = true;
       try {
         const all = await cloudLoad();
         Object.assign(all, pending);
@@ -143,8 +146,14 @@
           },
           body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(all, null, 2) } } })
         });
+        _lastCloudContent = JSON.stringify(all);
+        _cloudSaveInProgress = false;
         console.log(LOG, "Cloud settings saved");
-      } catch(e) { console.warn(LOG, "Cloud save failed:", e); }
+      } catch(e) {
+        Object.assign(_cloudSavePending, pending);
+        _cloudSaveInProgress = false;
+        console.warn(LOG, "Cloud save failed:", e);
+      }
     }, 1500);
   }
 
@@ -174,6 +183,7 @@
   }
 
   async function pollCloudSync() {
+    if (_cloudSaveInProgress || Object.keys(_cloudSavePending).length > 0) return;
     const cloud = await cloudLoad();
     const content = JSON.stringify(cloud);
     if (content === _lastCloudContent) return;

@@ -97,6 +97,7 @@
   const CLOUD_POLL_KEY = "tmCloudSyncPoll";
   let _cloudSavePending = {};
   let _cloudSaveTimer = null;
+  let _cloudSaveInProgress = false;
   let _cloudPollIntervalId = null;
 
   function gmFetch(url, { method = "GET", headers = {}, body } = {}) {
@@ -126,13 +127,40 @@
     } catch(e) { console.warn("[Vault] Cloud load failed:", e); return {}; }
   }
 
+  let _cloudStatusClearTimer = null;
+  function setCloudSaveStatus(state) {
+    const el = document.getElementById("tm-vault-cloud-status");
+    if (!el) return;
+    if (_cloudStatusClearTimer) { clearTimeout(_cloudStatusClearTimer); _cloudStatusClearTimer = null; }
+    if (state === "pending") {
+      el.textContent = "⏳"; el.title = "Save queued…"; el.style.color = "#f0a500";
+    } else if (state === "saving") {
+      el.textContent = "↑"; el.title = "Saving to cloud…"; el.style.color = "#f0a500";
+    } else if (state === "saved") {
+      el.textContent = "✓"; el.title = "Saved to cloud"; el.style.color = "#44cc88";
+      _cloudStatusClearTimer = setTimeout(() => {
+        const e2 = document.getElementById("tm-vault-cloud-status");
+        if (e2) { e2.textContent = ""; e2.title = ""; }
+        _cloudStatusClearTimer = null;
+      }, 3000);
+    } else if (state === "error") {
+      el.textContent = "✗"; el.title = "Save failed — check console"; el.style.color = "#f66";
+    } else {
+      el.textContent = ""; el.title = "";
+    }
+  }
+
   function scheduleCloudSave(section, data) {
     _cloudSavePending[section] = JSON.parse(JSON.stringify(data));
     if (_cloudSaveTimer) clearTimeout(_cloudSaveTimer);
+    setCloudSaveStatus("pending");
     _cloudSaveTimer = setTimeout(async () => {
       if (!GIST_TOKEN || GIST_TOKEN === "YOUR_GITHUB_TOKEN_HERE") return;
       const pending = Object.assign({}, _cloudSavePending);
       _cloudSavePending = {};
+      _cloudSaveTimer = null;
+      _cloudSaveInProgress = true;
+      setCloudSaveStatus("saving");
       try {
         const all = await cloudLoad();
         Object.assign(all, pending);
@@ -145,8 +173,16 @@
           },
           body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(all, null, 2) } } })
         });
+        _lastCloudContent = JSON.stringify(all);
+        _cloudSaveInProgress = false;
+        setCloudSaveStatus("saved");
         console.log("[Vault] Cloud settings saved");
-      } catch(e) { console.warn("[Vault] Cloud save failed:", e); }
+      } catch(e) {
+        Object.assign(_cloudSavePending, pending);
+        _cloudSaveInProgress = false;
+        setCloudSaveStatus("error");
+        console.warn("[Vault] Cloud save failed:", e);
+      }
     }, 1500);
   }
 
@@ -174,6 +210,7 @@
   }
 
   async function pollCloudSync() {
+    if (_cloudSaveInProgress || Object.keys(_cloudSavePending).length > 0) return;
     const cloud = await cloudLoad();
     const content = JSON.stringify(cloud);
     if (content === _lastCloudContent) return;
@@ -711,6 +748,7 @@
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Poll Gist cloud every second to sync settings across devices. Disable to reduce GitHub API usage.">
             <input id="tm-vault-cloud-poll" type="checkbox"> Cloud sync
           </label>
+          <span id="tm-vault-cloud-status" style="font-size:11px;font-weight:bold;min-width:14px;text-align:center;"></span>
         </div>
 
       </div>
