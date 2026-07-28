@@ -934,7 +934,7 @@
       if (!stockTableWrapper) { console.warn("[AutoFly2] No stock table — flying home anyway"); abroadLog("No stock table found — flying home", "warn"); }
 
       if (stockTableWrapper && !overBudget()) {
-        const purchaseInfo = getPurchaseInfo();
+        let purchaseInfo = getPurchaseInfo();
         let remainingSlots = purchaseInfo ? purchaseInfo.limit - purchaseInfo.purchased : Infinity;
 
         if (remainingSlots > 0) {
@@ -1011,16 +1011,36 @@
               await delay(100);
             }
 
-            if (yesBtn) {
-              try { yesBtn.click(); } catch (e) {}
-              remainingSlots--;
-              console.log(`[AutoFly2] Confirmed purchase: ${itemName}`);
-              abroadLog(`✓ Bought ${itemName}`, "success");
-              await delay(500);
-            } else if (clickedBuyBtn) {
-              remainingSlots--;
-              abroadLog(`✓ Bought ${itemName}`, "success");
-              await delay(500);
+            if (yesBtn || clickedBuyBtn) {
+              if (yesBtn) { try { yesBtn.click(); } catch (e) {} }
+              // Poll up to 2s for slot counter to update
+              let newInfo = null;
+              const verifyDeadline = Math.min(Date.now() + 2000, abroadDeadline - 1000);
+              while (Date.now() < verifyDeadline) {
+                await delay(200);
+                newInfo = getPurchaseInfo();
+                if (!purchaseInfo || !newInfo || newInfo.purchased > purchaseInfo.purchased) break;
+              }
+              if (purchaseInfo && newInfo) {
+                if (newInfo.purchased > purchaseInfo.purchased) {
+                  purchaseInfo = newInfo;
+                  remainingSlots = newInfo.limit - newInfo.purchased;
+                  console.log(`[AutoFly2] Confirmed purchase: ${itemName} (${newInfo.purchased}/${newInfo.limit})`);
+                  abroadLog(`✓ Bought ${itemName} (${newInfo.purchased}/${newInfo.limit})`, "success");
+                } else {
+                  abroadLog(`✗ ${itemName}: slot counter unchanged after buy`, "error");
+                }
+              } else {
+                // Counter not visible — trust the click; sync if counter just became available
+                if (newInfo) {
+                  purchaseInfo = newInfo;
+                  remainingSlots = newInfo.limit - newInfo.purchased;
+                } else {
+                  remainingSlots = isFinite(remainingSlots) ? remainingSlots - 1 : remainingSlots;
+                }
+                console.log(`[AutoFly2] Confirmed purchase: ${itemName}`);
+                abroadLog(`✓ Bought ${itemName}`, "success");
+              }
             } else {
               abroadLog(`✗ ${itemName}: no confirm panel appeared`, "error");
             }
@@ -1274,7 +1294,11 @@
 
   // =================== AUTO-FLY CHECK ===================
   // Runs every 60s when autoEnabled. Compares current TCT to flight plan.
+  let _autoFlyCheckRunning = false;
   async function autoFlyCheck() {
+    if (_autoFlyCheckRunning) return;
+    _autoFlyCheckRunning = true;
+    try {
     options = loadOptions();
     await wait(500);
 
@@ -1479,6 +1503,9 @@
     mo.observe(document.body, { childList: true, subtree: true });
     setTimeout(() => mo.disconnect(), 15000);
     console.log(`[AutoFly2] Waiting for Travel button for ${nextFlight.destination}`);
+  } finally {
+    _autoFlyCheckRunning = false;
+  }
   }
 
   function stopNerveWatch() {
