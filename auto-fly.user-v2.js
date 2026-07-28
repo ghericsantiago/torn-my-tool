@@ -24,13 +24,7 @@
   const API_KEY = "v6Yo75UQIYvWYrhT";
 
   // =================== CLOUD SYNC ===================
-  // Fill these in once — see README or instructions below.
-  // 1. Go to https://github.com/settings/tokens/new → generate a token with "gist" scope.
-  // 2. Go to https://gist.github.com → create a NEW secret gist, file name: torn-my-tool-settings.json, content: {}
-  // 3. Copy the Gist ID from the URL (the long hex string after your username).
-  const GIST_TOKEN = "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";
-  const GIST_ID    = "bd5625e0bb394474941befb868d9af6d";
-  const GIST_FILE  = "torn-my-tool-settings.json";
+  const KV_URL = "https://kv-get-started.ghericsantiago.workers.dev/torn-settings";
 
   const VALID_DESTINATIONS = [
     "Mexico", "Cayman Islands", "Canada", "Hawaii",
@@ -193,30 +187,12 @@
     });
   }
 
-  function logRateLimitIfNeeded(tag, status, text) {
-    if (status !== 403 && status !== 429) return false;
-    let msg = `[${tag}] GitHub rate limit hit (HTTP ${status})`;
-    try {
-      const body = JSON.parse(text || "{}");
-      if (body.message) msg += ` — ${body.message}`;
-    } catch(e) {}
-    console.error(msg);
-    return true;
-  }
-
   async function cloudLoad() {
-    if (!GIST_TOKEN || GIST_TOKEN === "YOUR_GITHUB_TOKEN_HERE") return null;
     try {
-      const r = await gmFetch(`https://api.github.com/gists/${GIST_ID}?_=${Date.now()}`, {
-        headers: { Authorization: `token ${GIST_TOKEN}`, Accept: "application/vnd.github.v3+json", "Cache-Control": "no-cache" }
-      });
-      if (!r.ok) {
-        if (!logRateLimitIfNeeded("AutoFly2 load", r.status, r.text))
-          console.warn("[AutoFly2] Cloud load HTTP error:", r.status);
-        return null;
-      }
-      const d = await r.json();
-      return JSON.parse(d.files?.[GIST_FILE]?.content || "{}");
+      const r = await gmFetch(`${KV_URL}?_=${Date.now()}`);
+      if (r.status === 404) return {};
+      if (!r.ok) { console.warn("[AutoFly2] Cloud load HTTP error:", r.status); return null; }
+      return JSON.parse(r.text || "{}");
     } catch(e) { console.warn("[AutoFly2] Cloud load failed:", e); return null; }
   }
 
@@ -248,38 +224,25 @@
     if (_cloudSaveTimer) clearTimeout(_cloudSaveTimer);
     setCloudSaveStatus("pending");
     _cloudSaveTimer = setTimeout(async () => {
-      if (!GIST_TOKEN || GIST_TOKEN === "YOUR_GITHUB_TOKEN_HERE") return;
       const pending = Object.assign({}, _cloudSavePending);
       _cloudSavePending = {};
       _cloudSaveTimer = null;
       _cloudSaveInProgress = true;
       setCloudSaveStatus("saving");
       try {
-        const all = await cloudLoad();
-        if (all === null) {
-          // Load failed — restore pending so the next save attempt picks them up
-          Object.assign(_cloudSavePending, pending);
-          _cloudSaveInProgress = false;
-          setCloudSaveStatus("error");
-          console.error("[AutoFly2] Cloud save aborted — gist load failed (data preserved for retry). Sections:", Object.keys(pending).join(", "));
-          return;
-        }
+        let all = {};
+        try { all = JSON.parse(_lastCloudContent || "{}"); } catch(e) {}
         Object.assign(all, pending);
-        const patchRes = await gmFetch(`https://api.github.com/gists/${GIST_ID}`, {
-          method: "PATCH",
-          headers: {
-            Authorization: `token ${GIST_TOKEN}`,
-            Accept: "application/vnd.github.v3+json",
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(all, null, 2) } } })
+        const patchRes = await gmFetch(KV_URL, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(all, null, 2)
         });
         if (!patchRes.ok) {
           Object.assign(_cloudSavePending, pending);
           _cloudSaveInProgress = false;
           setCloudSaveStatus("error");
-          if (!logRateLimitIfNeeded("AutoFly2 save", patchRes.status, patchRes.text))
-            console.error(`[AutoFly2] Cloud save failed — HTTP ${patchRes.status}. Sections: ${Object.keys(pending).join(", ")} (data preserved for retry)`);
+          console.error(`[AutoFly2] Cloud save failed — HTTP ${patchRes.status}. Sections: ${Object.keys(pending).join(", ")} (data preserved for retry)`);
           return;
         }
         _lastCloudContent = JSON.stringify(all);
@@ -348,19 +311,14 @@
     try { pending = JSON.parse(raw); } catch(e) { localStorage.removeItem(CLOUD_SAVE_PERSIST_KEY); return; }
     if (!Object.keys(pending).length) { localStorage.removeItem(CLOUD_SAVE_PERSIST_KEY); return; }
     localStorage.removeItem(CLOUD_SAVE_PERSIST_KEY);
-    if (!GIST_TOKEN || GIST_TOKEN === "YOUR_GITHUB_TOKEN_HERE") return;
     try {
-      const all = await cloudLoad();
-      if (all === null) return;
+      let all = {};
+      try { all = JSON.parse(_lastCloudContent || "{}"); } catch(e) {}
       Object.assign(all, pending);
-      const res = await gmFetch(`https://api.github.com/gists/${GIST_ID}`, {
-        method: "PATCH",
-        headers: {
-          Authorization: `token ${GIST_TOKEN}`,
-          Accept: "application/vnd.github.v3+json",
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(all, null, 2) } } })
+      const res = await gmFetch(KV_URL, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(all, null, 2)
       });
       if (res.ok) {
         _lastCloudContent = JSON.stringify(all);
@@ -417,7 +375,7 @@
   function startCloudPoll() {
     if (!isCloudPollEnabled()) { console.log("[AutoFly2] Cloud polling disabled"); return; }
     if (_cloudPollIntervalId) return;
-    _cloudPollIntervalId = setInterval(pollCloudSync, 1000);
+    _cloudPollIntervalId = setInterval(pollCloudSync, 15000);
   }
   function stopCloudPoll() {
     if (_cloudPollIntervalId) { clearInterval(_cloudPollIntervalId); _cloudPollIntervalId = null; }

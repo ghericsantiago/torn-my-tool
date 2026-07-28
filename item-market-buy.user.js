@@ -17,9 +17,7 @@
   const KEY = "tmItemMarketBuySettings";
 
   // =================== CLOUD SYNC ===================
-  const GIST_TOKEN = "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";
-  const GIST_ID    = "bd5625e0bb394474941befb868d9af6d";
-  const GIST_FILE  = "torn-my-tool-settings.json";
+  const KV_URL = "https://kv-get-started.ghericsantiago.workers.dev/torn-settings";
   const PANEL_ID = "tm-imbuy-panel";
   const FAB_ID = "tm-imbuy-fab";
   const MODAL_ID = "tm-imbuy-modal";
@@ -93,59 +91,70 @@
 
   // =================== CLOUD HELPERS ===================
   const CLOUD_POLL_KEY = "tmCloudSyncPoll";
+  const CLOUD_SAVE_PERSIST_KEY = "tmCloudSavePersist";
   let _cloudSavePending = {};
   let _cloudSaveTimer = null;
   let _cloudSaveInProgress = false;
   let _cloudPollIntervalId = null;
 
+  window.addEventListener("beforeunload", () => {
+    if (!Object.keys(_cloudSavePending).length) return;
+    try {
+      const existing = JSON.parse(localStorage.getItem(CLOUD_SAVE_PERSIST_KEY) || "{}");
+      Object.assign(existing, _cloudSavePending);
+      localStorage.setItem(CLOUD_SAVE_PERSIST_KEY, JSON.stringify(existing));
+    } catch(e) {}
+  });
+
   function gmFetch(url, { method = "GET", headers = {}, body } = {}) {
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method, url, headers, data: body,
+        timeout: 30000,
         onload: (r) => resolve({
           ok: r.status >= 200 && r.status < 300,
           status: r.status,
+          text: r.responseText,
           json: () => Promise.resolve(JSON.parse(r.responseText)),
         }),
         onerror: () => reject(new Error("GM request failed")),
-        ontimeout: () => reject(new Error("GM request timed out")),
+        ontimeout: () => reject(new Error("GM request timed out after 30s")),
       });
     });
   }
 
   async function cloudLoad() {
-    if (!GIST_TOKEN || GIST_TOKEN === "YOUR_GITHUB_TOKEN_HERE") return {};
     try {
-      const r = await gmFetch(`https://api.github.com/gists/${GIST_ID}?_=${Date.now()}`, {
-        headers: { Authorization: `token ${GIST_TOKEN}`, Accept: "application/vnd.github.v3+json", "Cache-Control": "no-cache" }
-      });
-      if (!r.ok) return {};
-      const d = await r.json();
-      return JSON.parse(d.files?.[GIST_FILE]?.content || "{}");
-    } catch(e) { console.warn(LOG, "Cloud load failed:", e); return {}; }
+      const r = await gmFetch(`${KV_URL}?_=${Date.now()}`);
+      if (r.status === 404) return {};
+      if (!r.ok) { console.warn(LOG, "Cloud load HTTP error:", r.status); return null; }
+      return JSON.parse(r.text || "{}");
+    } catch(e) { console.warn(LOG, "Cloud load failed:", e); return null; }
   }
 
   function scheduleCloudSave(section, data) {
     _cloudSavePending[section] = JSON.parse(JSON.stringify(data));
     if (_cloudSaveTimer) clearTimeout(_cloudSaveTimer);
     _cloudSaveTimer = setTimeout(async () => {
-      if (!GIST_TOKEN || GIST_TOKEN === "YOUR_GITHUB_TOKEN_HERE") return;
       const pending = Object.assign({}, _cloudSavePending);
       _cloudSavePending = {};
       _cloudSaveTimer = null;
       _cloudSaveInProgress = true;
       try {
-        const all = await cloudLoad();
+        let all = {};
+        try { all = JSON.parse(_lastCloudContent || "{}"); } catch(e) {}
         Object.assign(all, pending);
-        await gmFetch(`https://api.github.com/gists/${GIST_ID}`, {
-          method: "PATCH",
-          headers: {
-            Authorization: `token ${GIST_TOKEN}`,
-            Accept: "application/vnd.github.v3+json",
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(all, null, 2) } } })
+        const res = await gmFetch(KV_URL, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(all, null, 2)
         });
+        if (!res.ok) {
+          Object.assign(_cloudSavePending, pending);
+          _cloudSaveInProgress = false;
+          console.error(LOG, `Cloud save failed — HTTP ${res.status} (data preserved for retry)`);
+          return;
+        }
         _lastCloudContent = JSON.stringify(all);
         _cloudSaveInProgress = false;
         console.log(LOG, "Cloud settings saved");
@@ -158,6 +167,32 @@
   }
 
   let _lastCloudContent = null;
+
+  async function flushPersistedCloudSave() {
+    let raw;
+    try { raw = localStorage.getItem(CLOUD_SAVE_PERSIST_KEY); } catch(e) { return; }
+    if (!raw) return;
+    let pending;
+    try { pending = JSON.parse(raw); } catch(e) { localStorage.removeItem(CLOUD_SAVE_PERSIST_KEY); return; }
+    if (!Object.keys(pending).length) { localStorage.removeItem(CLOUD_SAVE_PERSIST_KEY); return; }
+    localStorage.removeItem(CLOUD_SAVE_PERSIST_KEY);
+    try {
+      let all = {};
+      try { all = JSON.parse(_lastCloudContent || "{}"); } catch(e) {}
+      Object.assign(all, pending);
+      const res = await gmFetch(KV_URL, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(all, null, 2)
+      });
+      if (res.ok) {
+        _lastCloudContent = JSON.stringify(all);
+        console.log(LOG, "Flushed persisted cloud save. Sections:", Object.keys(pending).join(", "));
+      }
+    } catch(e) {
+      console.warn(LOG, "Failed to flush persisted cloud save:", e);
+    }
+  }
 
   function applyCloudSettings(cloud) {
     if (!cloud.itemmarket) return;
@@ -177,6 +212,7 @@
 
   async function initCloudSync() {
     const cloud = await cloudLoad();
+    if (cloud === null) { console.warn(LOG, "initCloudSync skipped — load failed"); return; }
     _lastCloudContent = JSON.stringify(cloud);
     applyCloudSettings(cloud);
     console.log(LOG, "Cloud settings synced");
@@ -185,6 +221,7 @@
   async function pollCloudSync() {
     if (_cloudSaveInProgress || Object.keys(_cloudSavePending).length > 0) return;
     const cloud = await cloudLoad();
+    if (cloud === null) return;
     const content = JSON.stringify(cloud);
     if (content === _lastCloudContent) return;
     _lastCloudContent = content;
@@ -199,7 +236,7 @@
   function startCloudPoll() {
     if (!isCloudPollEnabled()) { console.log("[IMBuy] Cloud polling disabled"); return; }
     if (_cloudPollIntervalId) return;
-    _cloudPollIntervalId = setInterval(pollCloudSync, 1000);
+    _cloudPollIntervalId = setInterval(pollCloudSync, 15000);
   }
   function stopCloudPoll() {
     if (_cloudPollIntervalId) { clearInterval(_cloudPollIntervalId); _cloudPollIntervalId = null; }
@@ -1359,7 +1396,9 @@
   }, 1000);
 
   startMonitor();
-  initCloudSync().catch(e => console.warn(LOG, "initCloudSync error:", e));
+  flushPersistedCloudSave()
+    .then(() => initCloudSync())
+    .catch(e => console.warn(LOG, "cloud init error:", e));
   startCloudPoll();
 
   // Debug helpers for console testing.
