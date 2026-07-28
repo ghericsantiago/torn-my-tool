@@ -825,6 +825,78 @@
     return false;
   }
 
+  // =================== ABROAD LOG ===================
+  const ABROAD_LOG_KEY = "tmAbroadLog";
+  // Survives page reloads (sessionStorage) but clears when the tab is closed.
+  let _abroadLog = (() => {
+    try { return JSON.parse(sessionStorage.getItem(ABROAD_LOG_KEY) || "[]"); } catch(e) { return []; }
+  })();
+
+  function abroadLog(msg, type = "info") {
+    const now = new Date();
+    const t = `${String(now.getUTCHours()).padStart(2,"0")}:${String(now.getUTCMinutes()).padStart(2,"0")}:${String(now.getUTCSeconds()).padStart(2,"0")}`;
+    _abroadLog.push({ t, msg, type });
+    if (_abroadLog.length > 300) _abroadLog.shift();
+    try { sessionStorage.setItem(ABROAD_LOG_KEY, JSON.stringify(_abroadLog)); } catch(e) {}
+    const list = document.getElementById("tm-af2-log-list");
+    if (list) _renderAbroadLogList(list);
+  }
+
+  function _renderAbroadLogList(container) {
+    const colorMap = { info: "#ccc", success: "#44cc88", warn: "#f0a500", error: "#f66" };
+    if (!_abroadLog.length) {
+      container.innerHTML = '<div style="color:#555;font-size:12px;padding:8px 0;">No activity yet. Auto-fly will log abroad shopping here.</div>';
+      return;
+    }
+    container.innerHTML = _abroadLog.slice().reverse().map(e =>
+      `<div style="padding:3px 0;border-bottom:1px solid #1e1e1e;font-size:11px;display:flex;gap:8px;align-items:baseline;">` +
+      `<span style="color:#444;white-space:nowrap;flex-shrink:0;font-variant-numeric:tabular-nums;">${escHtml(e.t)}</span>` +
+      `<span style="color:${colorMap[e.type] || "#ccc"};">${escHtml(e.msg)}</span>` +
+      `</div>`
+    ).join("");
+  }
+
+  function openAbroadLogModal() {
+    let modal = document.getElementById("tm-af2-log-modal");
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = "tm-af2-log-modal";
+      modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999999;display:flex;align-items:center;justify-content:center;";
+      const box = document.createElement("div");
+      box.style.cssText = [
+        "background:#1a1a1a","border:1px solid #444","border-radius:10px",
+        "padding:16px","width:500px","max-width:92vw",
+        "max-height:80vh","display:flex","flex-direction:column","gap:8px",
+        "box-shadow:0 8px 32px rgba(0,0,0,0.8)",
+      ].join(";");
+      box.innerHTML =
+        `<div style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">` +
+          `<strong style="color:#eee;font-size:13px;">&#128203; Shopping Logs <span style="color:#555;font-weight:normal;font-size:11px;">(newest first · TCT)</span></strong>` +
+          `<div style="display:flex;gap:6px;">` +
+            `<button id="tm-af2-log-clear" style="padding:2px 8px;background:#220000;border:1px solid #622;color:#f66;border-radius:3px;cursor:pointer;font-size:11px;">Clear</button>` +
+            `<button id="tm-af2-log-close" style="padding:2px 8px;background:#222;border:1px solid #444;color:#aaa;border-radius:3px;cursor:pointer;font-size:11px;">✕</button>` +
+          `</div>` +
+        `</div>` +
+        `<div id="tm-af2-log-list" style="overflow-y:auto;flex:1;padding-right:4px;"></div>`;
+      modal.appendChild(box);
+      document.body.appendChild(modal);
+      modal.addEventListener("click", e => { if (e.target === modal) closeAbroadLogModal(); });
+      document.getElementById("tm-af2-log-close").addEventListener("click", closeAbroadLogModal);
+      document.getElementById("tm-af2-log-clear").addEventListener("click", () => {
+        _abroadLog.length = 0;
+        try { sessionStorage.removeItem(ABROAD_LOG_KEY); } catch(e) {}
+        _renderAbroadLogList(document.getElementById("tm-af2-log-list"));
+      });
+    }
+    modal.style.display = "flex";
+    _renderAbroadLogList(document.getElementById("tm-af2-log-list"));
+  }
+
+  function closeAbroadLogModal() {
+    const modal = document.getElementById("tm-af2-log-modal");
+    if (modal) modal.style.display = "none";
+  }
+
   // =================== ABROAD SHOPPING ===================
   function waitForStockTable(timeout = 15000) {
     return new Promise(resolve => {
@@ -855,9 +927,11 @@
     const overBudget = (reserve = 2000) => Date.now() + reserve >= abroadDeadline;
 
     try {
+      const _dest = getActiveFlight()?.destination || "abroad";
       console.log("[AutoFly2] Processing abroad shopping");
+      abroadLog(`Arrived at ${_dest} — processing shopping`, "info");
       const stockTableWrapper = await waitForStockTable(Math.min(8000, msLeft(3000)));
-      if (!stockTableWrapper) { console.warn("[AutoFly2] No stock table — flying home anyway"); }
+      if (!stockTableWrapper) { console.warn("[AutoFly2] No stock table — flying home anyway"); abroadLog("No stock table found — flying home", "warn"); }
 
       if (stockTableWrapper && !overBudget()) {
         const purchaseInfo = getPurchaseInfo();
@@ -889,7 +963,7 @@
             for (const shopName of nameToRow.keys()) {
               if (shopName.includes(lowerItem) || lowerItem.includes(shopName)) { matchKey = shopName; break; }
             }
-            if (!matchKey) continue;
+            if (!matchKey) { abroadLog(`${listItem}: not in stock here`, "warn"); continue; }
 
             const row = nameToRow.get(matchKey);
             nameToRow.delete(matchKey);
@@ -898,6 +972,7 @@
             const amountCell = row.querySelector('[data-tt-content-type="amount"]');
             const itemName = nameCell.textContent.trim();
             console.log(`[AutoFly2] Buying ${itemName}`);
+            abroadLog(`Buying ${itemName}…`, "info");
 
             const maxBtn = (amountCell || row).querySelector(
               '[class*="wai-btn"], .input-money-symbol input.wai-btn, .input-money-symbol button, input.wai-btn'
@@ -936,10 +1011,14 @@
               try { yesBtn.click(); } catch (e) {}
               remainingSlots--;
               console.log(`[AutoFly2] Confirmed purchase: ${itemName}`);
+              abroadLog(`✓ Bought ${itemName}`, "success");
               await delay(500);
             } else if (clickedBuyBtn) {
               remainingSlots--;
+              abroadLog(`✓ Bought ${itemName}`, "success");
               await delay(500);
+            } else {
+              abroadLog(`✗ ${itemName}: no confirm panel appeared`, "error");
             }
           }
         }
@@ -947,6 +1026,7 @@
 
       // Fly home
       console.log("[AutoFly2] Shopping done. Flying home...");
+      abroadLog("Shopping done — flying home", "info");
       const travelHomeBtn = document.querySelector('[aria-controls="travel-home-panel"]');
       safeClick(travelHomeBtn);
       await delay(500);
@@ -1527,7 +1607,10 @@
         <!-- Header -->
         <div style="display:flex;justify-content:space-between;align-items:center;flex:1 1 100%;">
           <strong>&#9992; Torn Flight Planner v2</strong>
-          <span id="tm-af2-tct-clock" style="font-size:11px;color:#f0a500;font-weight:bold;font-variant-numeric:tabular-nums;"></span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button id="tm-af2-log-btn" style="padding:2px 8px;background:#222;border:1px solid #444;color:#aaa;border-radius:3px;cursor:pointer;font-size:11px;" title="View abroad shopping logs">&#128203; Logs</button>
+            <span id="tm-af2-tct-clock" style="font-size:11px;color:#f0a500;font-weight:bold;font-variant-numeric:tabular-nums;"></span>
+          </div>
         </div>
 
         <!-- Status line -->
@@ -1645,6 +1728,9 @@
     options = loadOptions();
 
     // Options checkboxes
+    const logBtn = document.getElementById("tm-af2-log-btn");
+    if (logBtn) logBtn.addEventListener("click", openAbroadLogModal);
+
     const autoEl = document.getElementById("tm-af2-auto-enabled");
     const flyBackEl = document.getElementById("tm-af2-fly-back");
     const skipEl = document.getElementById("tm-af2-skip-warnings");
