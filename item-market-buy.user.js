@@ -96,6 +96,8 @@
   let _cloudSaveTimer = null;
   let _cloudSaveInProgress = false;
   let _cloudPollIntervalId = null;
+  let _nextPollAt = 0;
+  let _syncCountdownTimerId = null;
 
   window.addEventListener("beforeunload", () => {
     if (!Object.keys(_cloudSavePending).length) return;
@@ -130,6 +132,14 @@
       if (!r.ok) { console.warn(LOG, "Cloud load HTTP error:", r.status); return null; }
       return JSON.parse(r.text || "{}");
     } catch(e) { console.warn(LOG, "Cloud load failed:", e); return null; }
+  }
+
+  function updateSyncCountdown() {
+    const el = document.getElementById("tm-imbuy-cloud-next");
+    if (!el) return;
+    if (_cloudSaveInProgress || Object.keys(_cloudSavePending).length > 0) { el.textContent = ""; return; }
+    const secs = Math.max(0, Math.ceil((_nextPollAt - Date.now()) / 1000));
+    el.textContent = secs <= 0 ? "↻ …" : `↻ ${secs}s`;
   }
 
   function scheduleCloudSave(section, data) {
@@ -219,6 +229,7 @@
   }
 
   async function pollCloudSync() {
+    _nextPollAt = Date.now() + 15000;
     if (_cloudSaveInProgress || Object.keys(_cloudSavePending).length > 0) return;
     const cloud = await cloudLoad();
     if (cloud === null) return;
@@ -236,10 +247,16 @@
   function startCloudPoll() {
     if (!isCloudPollEnabled()) { console.log("[IMBuy] Cloud polling disabled"); return; }
     if (_cloudPollIntervalId) return;
+    _nextPollAt = Date.now() + 15000;
     _cloudPollIntervalId = setInterval(pollCloudSync, 15000);
+    if (_syncCountdownTimerId) clearInterval(_syncCountdownTimerId);
+    _syncCountdownTimerId = setInterval(updateSyncCountdown, 1000);
   }
   function stopCloudPoll() {
     if (_cloudPollIntervalId) { clearInterval(_cloudPollIntervalId); _cloudPollIntervalId = null; }
+    if (_syncCountdownTimerId) { clearInterval(_syncCountdownTimerId); _syncCountdownTimerId = null; }
+    const el = document.getElementById("tm-imbuy-cloud-next");
+    if (el) el.textContent = "";
   }
 
   // The item market is a hash-routed SPA at page.php?sid=ItemMarket
@@ -1107,9 +1124,10 @@
               style="width:52px;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;text-align:center;">
             s
           </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Poll Gist cloud every second to sync settings across devices. Disable to reduce GitHub API usage.">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Poll cloud every 15s to sync settings across devices.">
             <input id="tm-imbuy-cloud-poll" type="checkbox"> Cloud sync
           </label>
+          <span id="tm-imbuy-cloud-next" style="font-size:10px;color:#555;font-variant-numeric:tabular-nums;"></span>
         </div>
 
       </div>

@@ -98,6 +98,8 @@
   let _cloudSaveTimer = null;
   let _cloudSaveInProgress = false;
   let _cloudPollIntervalId = null;
+  let _nextPollAt = 0;
+  let _syncCountdownTimerId = null;
 
   window.addEventListener("beforeunload", () => {
     if (!Object.keys(_cloudSavePending).length) return;
@@ -155,6 +157,14 @@
     } else {
       el.textContent = ""; el.title = "";
     }
+  }
+
+  function updateSyncCountdown() {
+    const el = document.getElementById("tm-vault-cloud-next");
+    if (!el) return;
+    if (_cloudSaveInProgress || Object.keys(_cloudSavePending).length > 0) { el.textContent = ""; return; }
+    const secs = Math.max(0, Math.ceil((_nextPollAt - Date.now()) / 1000));
+    el.textContent = secs <= 0 ? "↻ …" : `↻ ${secs}s`;
   }
 
   function scheduleCloudSave(section, data) {
@@ -247,6 +257,7 @@
   }
 
   async function pollCloudSync() {
+    _nextPollAt = Date.now() + 15000;
     if (_cloudSaveInProgress || Object.keys(_cloudSavePending).length > 0) return;
     const cloud = await cloudLoad();
     if (cloud === null) return;
@@ -264,10 +275,16 @@
   function startCloudPoll() {
     if (!isCloudPollEnabled()) { console.log("[Vault] Cloud polling disabled"); return; }
     if (_cloudPollIntervalId) return;
+    _nextPollAt = Date.now() + 15000;
     _cloudPollIntervalId = setInterval(pollCloudSync, 15000);
+    if (_syncCountdownTimerId) clearInterval(_syncCountdownTimerId);
+    _syncCountdownTimerId = setInterval(updateSyncCountdown, 1000);
   }
   function stopCloudPoll() {
     if (_cloudPollIntervalId) { clearInterval(_cloudPollIntervalId); _cloudPollIntervalId = null; }
+    if (_syncCountdownTimerId) { clearInterval(_syncCountdownTimerId); _syncCountdownTimerId = null; }
+    const el = document.getElementById("tm-vault-cloud-next");
+    if (el) el.textContent = "";
   }
 
   const CONFIG = loadSettings({
@@ -784,9 +801,10 @@
             <input id="tm-auto-attack-deposit" type="checkbox"${CONFIG.autoAttackDepositEnabled ? " checked" : ""}> Deposit on attack
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Poll Gist cloud every second to sync settings across devices. Disable to reduce GitHub API usage.">
-            <input id="tm-vault-cloud-poll" type="checkbox"> Cloud sync
+            <input id="tm-vault-cloud-poll" type="checkbox" title="Poll cloud every 15s to sync settings across devices."> Cloud sync
           </label>
           <span id="tm-vault-cloud-status" style="font-size:11px;font-weight:bold;min-width:14px;text-align:center;"></span>
+          <span id="tm-vault-cloud-next" style="font-size:10px;color:#555;font-variant-numeric:tabular-nums;"></span>
         </div>
 
       </div>

@@ -156,6 +156,8 @@
   let _cloudSaveTimer = null;
   let _cloudSaveInProgress = false;
   let _cloudPollIntervalId = null;
+  let _nextPollAt = 0;
+  let _syncCountdownTimerId = null;
 
   // When the page navigates/reloads, any queued cloud save is killed by the
   // 1500ms debounce timer being cleared. Persist the pending data to localStorage
@@ -217,6 +219,14 @@
     } else {
       el.textContent = ""; el.title = "";
     }
+  }
+
+  function updateSyncCountdown() {
+    const el = document.getElementById("tm-af2-cloud-next");
+    if (!el) return;
+    if (_cloudSaveInProgress || Object.keys(_cloudSavePending).length > 0) { el.textContent = ""; return; }
+    const secs = Math.max(0, Math.ceil((_nextPollAt - Date.now()) / 1000));
+    el.textContent = secs <= 0 ? "↻ …" : `↻ ${secs}s`;
   }
 
   function scheduleCloudSave(section, data) {
@@ -357,6 +367,7 @@
   }
 
   async function pollCloudSync() {
+    _nextPollAt = Date.now() + 15000;
     // Skip entirely — don't even hit the network — while a save is queued or in-flight
     if (_cloudSaveInProgress || Object.keys(_cloudSavePending).length > 0) return;
     const cloud = await cloudLoad();
@@ -375,10 +386,16 @@
   function startCloudPoll() {
     if (!isCloudPollEnabled()) { console.log("[AutoFly2] Cloud polling disabled"); return; }
     if (_cloudPollIntervalId) return;
+    _nextPollAt = Date.now() + 15000;
     _cloudPollIntervalId = setInterval(pollCloudSync, 15000);
+    if (_syncCountdownTimerId) clearInterval(_syncCountdownTimerId);
+    _syncCountdownTimerId = setInterval(updateSyncCountdown, 1000);
   }
   function stopCloudPoll() {
     if (_cloudPollIntervalId) { clearInterval(_cloudPollIntervalId); _cloudPollIntervalId = null; }
+    if (_syncCountdownTimerId) { clearInterval(_syncCountdownTimerId); _syncCountdownTimerId = null; }
+    const el = document.getElementById("tm-af2-cloud-next");
+    if (el) el.textContent = "";
   }
 
   // =================== STATE ===================
@@ -1540,6 +1557,7 @@
             <input id="tm-af2-cloud-poll" type="checkbox"> Cloud sync
           </label>
           <span id="tm-af2-cloud-status" style="font-size:11px;font-weight:bold;min-width:14px;text-align:center;"></span>
+          <span id="tm-af2-cloud-next" style="font-size:10px;color:#555;font-variant-numeric:tabular-nums;"></span>
         </div>
 
         <!-- Flight Plan -->
