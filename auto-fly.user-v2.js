@@ -66,13 +66,16 @@
 
   // =================== OPTIONS ===================
   function loadOptions() {
+    const DEFAULTS = { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5, gymEnabled: false, gymStat: "strength", holdIfNerveFull: false, autoRehabEnabled: false, minAddictionLevel: 1 };
     try {
-      return Object.assign(
-        { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5, gymEnabled: false, gymStat: "strength", holdIfNerveFull: false, autoRehabEnabled: false, minAddictionLevel: 1 },
-        JSON.parse(localStorage.getItem(OPTS_KEY) || "{}")
-      );
+      const raw = JSON.parse(localStorage.getItem(OPTS_KEY) || "{}");
+      const result = Object.assign({}, DEFAULTS);
+      for (const k of Object.keys(DEFAULTS)) {
+        if (k in raw) result[k] = raw[k];
+      }
+      return result;
     } catch (e) {
-      return { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5, gymEnabled: false, gymStat: "strength", holdIfNerveFull: false, autoRehabEnabled: false, minAddictionLevel: 1 };
+      return Object.assign({}, DEFAULTS);
     }
   }
   function saveOptions(o) {
@@ -88,7 +91,7 @@
       const plan = JSON.parse(localStorage.getItem(PLAN_KEY) || "[]");
       if (Array.isArray(plan)) return plan.map(f => {
         if (f.destination === "United Arab Emirates") f.destination = "UAE";
-        return Object.assign({ loop: false }, f);
+        return Object.assign({ loop: false, skip: false }, f);
       });
     } catch (e) {}
     return [];
@@ -115,7 +118,7 @@
     // Flights execute strictly in list order. The first pending flight blocks
     // everything below it. Loop flights keep resetting to pending (blocking)
     // until untagged. Scheduled flights wait for their time before firing.
-    const next = plan.find(f => f.status === "pending");
+    const next = plan.find(f => f.status === "pending" && !f.skip);
     if (!next) return null;
     if (!next.loop && next.departureTime && next.departureTime > now) return null;
     return next;
@@ -156,6 +159,7 @@
   const CLOUD_POLL_KEY = "tmCloudSyncPoll";
   let _cloudSavePending = {};
   let _cloudSaveTimer = null;
+  let _cloudSaveInProgress = false;
   let _cloudPollIntervalId = null;
 
   // GM_xmlhttpRequest wrapper — bypasses Torn's CSP that blocks api.github.com
@@ -175,28 +179,63 @@
   }
 
   async function cloudLoad() {
-    if (!GIST_TOKEN || GIST_TOKEN === "YOUR_GITHUB_TOKEN_HERE") return {};
+    if (!GIST_TOKEN || GIST_TOKEN === "YOUR_GITHUB_TOKEN_HERE") return null;
     try {
       const r = await gmFetch(`https://api.github.com/gists/${GIST_ID}?_=${Date.now()}`, {
         headers: { Authorization: `token ${GIST_TOKEN}`, Accept: "application/vnd.github.v3+json", "Cache-Control": "no-cache" }
       });
-      if (!r.ok) return {};
+      if (!r.ok) { console.warn("[AutoFly2] Cloud load HTTP error:", r.status); return null; }
       const d = await r.json();
       return JSON.parse(d.files?.[GIST_FILE]?.content || "{}");
-    } catch(e) { console.warn("[AutoFly2] Cloud load failed:", e); return {}; }
+    } catch(e) { console.warn("[AutoFly2] Cloud load failed:", e); return null; }
+  }
+
+  let _cloudStatusClearTimer = null;
+  function setCloudSaveStatus(state) {
+    const el = document.getElementById("tm-af2-cloud-status");
+    if (!el) return;
+    if (_cloudStatusClearTimer) { clearTimeout(_cloudStatusClearTimer); _cloudStatusClearTimer = null; }
+    if (state === "pending") {
+      el.textContent = "⏳"; el.title = "Save queued…"; el.style.color = "#f0a500";
+    } else if (state === "saving") {
+      el.textContent = "↑"; el.title = "Saving to cloud…"; el.style.color = "#f0a500";
+    } else if (state === "saved") {
+      el.textContent = "✓"; el.title = "Saved to cloud"; el.style.color = "#44cc88";
+      _cloudStatusClearTimer = setTimeout(() => {
+        const e2 = document.getElementById("tm-af2-cloud-status");
+        if (e2) { e2.textContent = ""; e2.title = ""; }
+        _cloudStatusClearTimer = null;
+      }, 3000);
+    } else if (state === "error") {
+      el.textContent = "✗"; el.title = "Save failed — check console"; el.style.color = "#f66";
+    } else {
+      el.textContent = ""; el.title = "";
+    }
   }
 
   function scheduleCloudSave(section, data) {
     _cloudSavePending[section] = JSON.parse(JSON.stringify(data));
     if (_cloudSaveTimer) clearTimeout(_cloudSaveTimer);
+    setCloudSaveStatus("pending");
     _cloudSaveTimer = setTimeout(async () => {
       if (!GIST_TOKEN || GIST_TOKEN === "YOUR_GITHUB_TOKEN_HERE") return;
       const pending = Object.assign({}, _cloudSavePending);
       _cloudSavePending = {};
+      _cloudSaveTimer = null;
+      _cloudSaveInProgress = true;
+      setCloudSaveStatus("saving");
       try {
         const all = await cloudLoad();
+        if (all === null) {
+          // Load failed — restore pending so the next save attempt picks them up
+          Object.assign(_cloudSavePending, pending);
+          _cloudSaveInProgress = false;
+          setCloudSaveStatus("error");
+          console.error("[AutoFly2] Cloud save aborted — gist load failed (data preserved for retry). Sections:", Object.keys(pending).join(", "));
+          return;
+        }
         Object.assign(all, pending);
-        await gmFetch(`https://api.github.com/gists/${GIST_ID}`, {
+        const patchRes = await gmFetch(`https://api.github.com/gists/${GIST_ID}`, {
           method: "PATCH",
           headers: {
             Authorization: `token ${GIST_TOKEN}`,
@@ -205,8 +244,23 @@
           },
           body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(all, null, 2) } } })
         });
-        console.log("[AutoFly2] Cloud settings saved");
-      } catch(e) { console.warn("[AutoFly2] Cloud save failed:", e); }
+        if (!patchRes.ok) {
+          Object.assign(_cloudSavePending, pending);
+          _cloudSaveInProgress = false;
+          setCloudSaveStatus("error");
+          console.error(`[AutoFly2] Cloud save failed — HTTP ${patchRes.status}. Sections: ${Object.keys(pending).join(", ")} (data preserved for retry)`);
+          return;
+        }
+        _lastCloudContent = JSON.stringify(all);
+        _cloudSaveInProgress = false;
+        setCloudSaveStatus("saved");
+        console.log("[AutoFly2] Cloud settings saved. Sections:", Object.keys(pending).join(", "));
+      } catch(e) {
+        Object.assign(_cloudSavePending, pending);
+        _cloudSaveInProgress = false;
+        setCloudSaveStatus("error");
+        console.error("[AutoFly2] Cloud save exception — sections:", Object.keys(pending).join(", "), e);
+      }
     }, 1500);
   }
 
@@ -232,7 +286,21 @@
       if (options.autoEnabled) startAutoCheck(); else stopAutoCheck();
     }
     if (cloud.autofly_plan && Array.isArray(cloud.autofly_plan)) {
-      try { localStorage.setItem(PLAN_KEY, JSON.stringify(cloud.autofly_plan)); } catch(e) {}
+      // Merge with local plan: never downgrade a flight's status from cloud data.
+      // "flying" and "done" set locally are the authoritative state — the Gist
+      // often has a stale "pending" because the cloud-save timer is cancelled by
+      // page reloads that happen right after departure.
+      const statusRank = { pending: 0, flying: 1, done: 2 };
+      const local = loadFlightPlan();
+      const localById = new Map(local.map(f => [f.id, f]));
+      const merged = cloud.autofly_plan.map(cf => {
+        const lf = localById.get(cf.id);
+        if (!lf) return cf;
+        const localRank = statusRank[lf.status] ?? 0;
+        const cloudRank = statusRank[cf.status] ?? 0;
+        return localRank > cloudRank ? Object.assign({}, cf, { status: lf.status }) : cf;
+      });
+      try { localStorage.setItem(PLAN_KEY, JSON.stringify(merged)); } catch(e) {}
       renderFlightPlan();
     }
     if (cloud.autofly_shopping && Array.isArray(cloud.autofly_shopping)) {
@@ -243,13 +311,36 @@
 
   async function initCloudSync() {
     const cloud = await cloudLoad();
+    if (cloud === null) { console.warn("[AutoFly2] initCloudSync skipped — load failed"); return; }
     _lastCloudContent = JSON.stringify(cloud);
     applyCloudSettings(cloud);
+
+    // Backfill any sections missing from the Gist using local data.
+    // This recovers from partial wipes without overwriting valid cloud data.
+    if (!cloud.autofly_opts) {
+      scheduleCloudSave("autofly_opts", loadOptions());
+      console.log("[AutoFly2] Backfilling missing autofly_opts to Gist");
+    }
+    if (!cloud.autofly_plan) {
+      const localPlan = loadFlightPlan();
+      if (localPlan.length > 0) {
+        scheduleCloudSave("autofly_plan", localPlan);
+        console.log("[AutoFly2] Backfilling missing autofly_plan to Gist");
+      }
+    }
+    if (!cloud.autofly_shopping) {
+      scheduleCloudSave("autofly_shopping", loadShoppingList());
+      console.log("[AutoFly2] Backfilling missing autofly_shopping to Gist");
+    }
+
     console.log("[AutoFly2] Cloud settings synced");
   }
 
   async function pollCloudSync() {
+    // Skip entirely — don't even hit the network — while a save is queued or in-flight
+    if (_cloudSaveInProgress || Object.keys(_cloudSavePending).length > 0) return;
     const cloud = await cloudLoad();
+    if (cloud === null) return;
     const content = JSON.stringify(cloud);
     if (content === _lastCloudContent) return;
     _lastCloudContent = content;
@@ -1066,7 +1157,14 @@
     options = loadOptions();
     await wait(500);
 
-    // Abroad: rehab (if Switzerland) + shop and fly home regardless of autoEnabled — flyBackEnabled still controls it
+    // In-flight — Torn sets both traveling=true AND abroad=true simultaneously, so
+    // this must come first to prevent processAbroadShopping from firing mid-flight.
+    if (isTraveling()) {
+      console.log("[AutoFly2] In transit — waiting for arrival");
+      return;
+    }
+
+    // Abroad (and not still traveling): rehab + shop and fly home
     if (isAbroad()) {
       if (options.flyBackEnabled) {
         const waiting = await scheduleReviveReloadIfHospitalized();
@@ -1106,12 +1204,6 @@
       setPanelStatus("Released from hospital — going to travel…", "#44cc88");
       await wait(1000);
       location.href = "/page.php?sid=travel";
-      return;
-    }
-
-    // In-flight — initTravelWatch handles it
-    if (isTraveling()) {
-      console.log("[AutoFly2] In transit — waiting for arrival");
       return;
     }
 
@@ -1333,6 +1425,9 @@
       const loopS = flight.loop
         ? "padding:1px 5px;background:#1a3a1a;border:1px solid #2a6a2a;color:#4f4;border-radius:3px;cursor:pointer;font-size:11px;"
         : "padding:1px 5px;background:#222;border:1px solid #444;color:#555;border-radius:3px;cursor:pointer;font-size:11px;";
+      const skipS = flight.skip
+        ? "padding:1px 5px;background:#3a1a00;border:1px solid #8a4a00;color:#f90;border-radius:3px;cursor:pointer;font-size:11px;"
+        : "padding:1px 5px;background:#222;border:1px solid #444;color:#555;border-radius:3px;cursor:pointer;font-size:11px;";
       const timeLabel = flight.loop
         ? `<span style="color:#4f4;font-size:10px;min-width:40px;font-weight:bold;" title="Loop — ignores schedule time">∞</span>`
         : flight.departureTime
@@ -1341,10 +1436,13 @@
       const destLabel = flight.priorityProduct
         ? `${escHtml(flight.destination)}<span style="color:#f0a500;font-size:10px;margin-left:3px;" title="Priority: ${escHtml(flight.priorityProduct)}">★ ${escHtml(flight.priorityProduct)}</span>`
         : escHtml(flight.destination);
+      const destColor = flight.skip ? "#555" : statusColor;
+      const destDecoration = flight.skip ? "line-through" : "none";
       row.innerHTML = [
         `<span style="color:${statusColor};font-size:13px;min-width:18px;text-align:center;">${statusIcon}</span>`,
         timeLabel,
-        `<span style="flex:1;font-size:12px;color:${statusColor};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${destLabel}</span>`,
+        `<span style="flex:1;font-size:12px;color:${destColor};text-decoration:${destDecoration};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${destLabel}</span>`,
+        `<button data-action="toggle-skip" data-idx="${i}" style="${skipS}" title="${flight.skip ? "Skipped — click to re-enable" : "Skip this flight"}">&#x2298;</button>`,
         `<button data-action="toggle-loop" data-idx="${i}" style="${loopS}" title="${flight.loop ? "Loop ON — click to disable" : "Loop OFF — click to enable continuous repeat"}">&#x21bb;</button>`,
         `<button data-action="edit-flight" data-idx="${i}" style="${editS}">✎</button>`,
         `<button data-action="up" data-idx="${i}" style="${btnS}"${i === 0 ? " disabled" : ""}>↑</button>`,
@@ -1421,6 +1519,7 @@
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Poll the Gist cloud every second to sync settings across devices. Disable to reduce GitHub API usage.">
             <input id="tm-af2-cloud-poll" type="checkbox"> Cloud sync
           </label>
+          <span id="tm-af2-cloud-status" style="font-size:11px;font-weight:bold;min-width:14px;text-align:center;"></span>
         </div>
 
         <!-- Flight Plan -->
@@ -1663,6 +1762,12 @@
         } else if (action === "cancel-flight") {
           renderFlightPlan();
 
+        } else if (action === "toggle-skip") {
+          if (plan[idx]) {
+            plan[idx].skip = !plan[idx].skip;
+            saveFlightPlan(plan);
+            renderFlightPlan();
+          }
         } else if (action === "toggle-loop") {
           if (plan[idx]) {
             plan[idx].loop = !plan[idx].loop;
