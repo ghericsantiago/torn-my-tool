@@ -157,25 +157,51 @@
 
   // =================== CLOUD HELPERS ===================
   const CLOUD_POLL_KEY = "tmCloudSyncPoll";
+  const CLOUD_SAVE_PERSIST_KEY = "tmCloudSavePersist"; // survives page navigation
   let _cloudSavePending = {};
   let _cloudSaveTimer = null;
   let _cloudSaveInProgress = false;
   let _cloudPollIntervalId = null;
+
+  // When the page navigates/reloads, any queued cloud save is killed by the
+  // 1500ms debounce timer being cleared. Persist the pending data to localStorage
+  // so the next page load can flush it before reading the Gist.
+  window.addEventListener("beforeunload", () => {
+    if (!Object.keys(_cloudSavePending).length) return;
+    try {
+      const existing = JSON.parse(localStorage.getItem(CLOUD_SAVE_PERSIST_KEY) || "{}");
+      Object.assign(existing, _cloudSavePending);
+      localStorage.setItem(CLOUD_SAVE_PERSIST_KEY, JSON.stringify(existing));
+    } catch(e) {}
+  });
 
   // GM_xmlhttpRequest wrapper — bypasses Torn's CSP that blocks api.github.com
   function gmFetch(url, { method = "GET", headers = {}, body } = {}) {
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method, url, headers, data: body,
+        timeout: 30000, // prevent stuck-on-saving if GitHub never responds
         onload: (r) => resolve({
           ok: r.status >= 200 && r.status < 300,
           status: r.status,
+          text: r.responseText,
           json: () => Promise.resolve(JSON.parse(r.responseText)),
         }),
         onerror: () => reject(new Error("GM request failed")),
-        ontimeout: () => reject(new Error("GM request timed out")),
+        ontimeout: () => reject(new Error("GM request timed out after 30s")),
       });
     });
+  }
+
+  function logRateLimitIfNeeded(tag, status, text) {
+    if (status !== 403 && status !== 429) return false;
+    let msg = `[${tag}] GitHub rate limit hit (HTTP ${status})`;
+    try {
+      const body = JSON.parse(text || "{}");
+      if (body.message) msg += ` — ${body.message}`;
+    } catch(e) {}
+    console.error(msg);
+    return true;
   }
 
   async function cloudLoad() {
@@ -184,7 +210,11 @@
       const r = await gmFetch(`https://api.github.com/gists/${GIST_ID}?_=${Date.now()}`, {
         headers: { Authorization: `token ${GIST_TOKEN}`, Accept: "application/vnd.github.v3+json", "Cache-Control": "no-cache" }
       });
-      if (!r.ok) { console.warn("[AutoFly2] Cloud load HTTP error:", r.status); return null; }
+      if (!r.ok) {
+        if (!logRateLimitIfNeeded("AutoFly2 load", r.status, r.text))
+          console.warn("[AutoFly2] Cloud load HTTP error:", r.status);
+        return null;
+      }
       const d = await r.json();
       return JSON.parse(d.files?.[GIST_FILE]?.content || "{}");
     } catch(e) { console.warn("[AutoFly2] Cloud load failed:", e); return null; }
@@ -248,7 +278,8 @@
           Object.assign(_cloudSavePending, pending);
           _cloudSaveInProgress = false;
           setCloudSaveStatus("error");
-          console.error(`[AutoFly2] Cloud save failed — HTTP ${patchRes.status}. Sections: ${Object.keys(pending).join(", ")} (data preserved for retry)`);
+          if (!logRateLimitIfNeeded("AutoFly2 save", patchRes.status, patchRes.text))
+            console.error(`[AutoFly2] Cloud save failed — HTTP ${patchRes.status}. Sections: ${Object.keys(pending).join(", ")} (data preserved for retry)`);
           return;
         }
         _lastCloudContent = JSON.stringify(all);
@@ -306,6 +337,37 @@
     if (cloud.autofly_shopping && Array.isArray(cloud.autofly_shopping)) {
       try { localStorage.setItem(SHOPPING_LIST_KEY, JSON.stringify(cloud.autofly_shopping)); } catch(e) {}
       renderShoppingList();
+    }
+  }
+
+  async function flushPersistedCloudSave() {
+    let raw;
+    try { raw = localStorage.getItem(CLOUD_SAVE_PERSIST_KEY); } catch(e) { return; }
+    if (!raw) return;
+    let pending;
+    try { pending = JSON.parse(raw); } catch(e) { localStorage.removeItem(CLOUD_SAVE_PERSIST_KEY); return; }
+    if (!Object.keys(pending).length) { localStorage.removeItem(CLOUD_SAVE_PERSIST_KEY); return; }
+    localStorage.removeItem(CLOUD_SAVE_PERSIST_KEY);
+    if (!GIST_TOKEN || GIST_TOKEN === "YOUR_GITHUB_TOKEN_HERE") return;
+    try {
+      const all = await cloudLoad();
+      if (all === null) return;
+      Object.assign(all, pending);
+      const res = await gmFetch(`https://api.github.com/gists/${GIST_ID}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `token ${GIST_TOKEN}`,
+          Accept: "application/vnd.github.v3+json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(all, null, 2) } } })
+      });
+      if (res.ok) {
+        _lastCloudContent = JSON.stringify(all);
+        console.log("[AutoFly2] Flushed persisted cloud save. Sections:", Object.keys(pending).join(", "));
+      }
+    } catch(e) {
+      console.warn("[AutoFly2] Failed to flush persisted cloud save:", e);
     }
   }
 
@@ -2004,7 +2066,9 @@
   initHospitalWatch();
   initTravelWatch();
   watchForOverseasError();
-  initCloudSync().catch(e => console.warn("[AutoFly2] initCloudSync error:", e));
+  flushPersistedCloudSave()
+    .then(() => initCloudSync())
+    .catch(e => console.warn("[AutoFly2] cloud init error:", e));
   startCloudPoll();
   if (isGymPage()) {
     options = loadOptions();
