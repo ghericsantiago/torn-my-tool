@@ -956,7 +956,11 @@
             const rest = rawShoppingList.filter((_, i) => i !== idx);
             return [idx === -1 ? p : rawShoppingList[idx], ...rest];
           })();
-          for (const listItem of effectiveShoppingList) {
+          const _destProducts = YATA_PRODUCTS[_dest];
+          const filteredShoppingList = _destProducts
+            ? effectiveShoppingList.filter(item => _destProducts.some(p => p.toLowerCase() === item.toLowerCase()))
+            : effectiveShoppingList;
+          for (const listItem of filteredShoppingList) {
             if (remainingSlots <= 0 || overBudget()) break;
             const lowerItem = listItem.toLowerCase();
             let matchKey = null;
