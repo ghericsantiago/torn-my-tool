@@ -948,7 +948,16 @@
     const overBudget = (reserve = 2000) => Date.now() + reserve >= abroadDeadline;
 
     try {
-      const _dest = getActiveFlight()?.destination || "abroad";
+      const _dest = (() => {
+        const fromFlight = getActiveFlight()?.destination;
+        if (fromFlight && YATA_PRODUCTS[fromFlight]) return fromFlight;
+        // Flight not found or destination unknown — scan DOM for a known country name
+        const pageText = document.body?.innerText || "";
+        for (const dest of Object.keys(YATA_PRODUCTS)) {
+          if (pageText.includes(dest)) return dest;
+        }
+        return fromFlight || "abroad";
+      })();
       console.log("[AutoFly2] Processing abroad shopping");
       abroadLog(`Arrived at ${_dest} — processing shopping`, "info");
       const stockTableWrapper = await waitForStockTable(Math.min(8000, msLeft(3000)));
