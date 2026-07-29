@@ -160,13 +160,19 @@
     #pt-controls {
       background: #171929;
       border-bottom: 1px solid #222540;
-      padding: 9px 16px;
+      padding: 8px 14px;
       display: flex;
-      flex-wrap: wrap;
-      gap: 7px;
-      align-items: center;
+      flex-direction: column;
+      gap: 6px;
       flex-shrink: 0;
     }
+    .pt-ctrl-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+    .pt-ctrl-row.wrap { flex-wrap: wrap; }
     #pt-controls label {
       font-size: 10px;
       font-weight: 600;
@@ -174,6 +180,7 @@
       text-transform: uppercase;
       letter-spacing: 0.5px;
       white-space: nowrap;
+      flex-shrink: 0;
     }
     #pt-controls input {
       background: #1c1f33;
@@ -188,11 +195,11 @@
     }
     #pt-controls input:focus { border-color: #c9943a; }
     #pt-controls input::placeholder { color: #323656; }
-    #pt-key    { width: 140px; font-family: monospace; font-size: 11px; }
+    #pt-key    { flex: 1; max-width: 220px; font-family: monospace; font-size: 11px; }
     #pt-from,
-    #pt-to     { width: 126px; }
-    #pt-search { width: 110px; }
-    #pt-tax    { width: 50px; text-align: center; }
+    #pt-to     { flex: 1; min-width: 100px; max-width: 145px; }
+    #pt-search { flex: 1; min-width: 80px; }
+    #pt-tax    { width: 50px; text-align: center; flex-shrink: 0; }
 
     /* colour the date input calendar icon on Webkit */
     #pt-controls input[type="date"]::-webkit-calendar-picker-indicator {
@@ -313,6 +320,26 @@
       margin-left: 5px;
     }
     .pt-tab.active .pt-tab-n { background: rgba(201,148,58,0.2); color: #c9943a; }
+
+    /* ── Date nav buttons ── */
+    .pt-nav {
+      background: #1c1f33;
+      border: 1px solid #2a2f4a;
+      color: #6b7494;
+      width: 26px;
+      height: 28px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      transition: color 0.15s, background 0.15s, border-color 0.15s;
+      flex-shrink: 0;
+    }
+    .pt-nav:hover { background: #2a2f4a; color: #c8cde0; border-color: #3d4466; }
 
     #pt-chart-btn {
       margin-left: auto;
@@ -445,8 +472,9 @@
       #pt-panel   { width: 100vw; }
       #pt-toggle.open { right: 100vw; }
       .pt-col-store, .pt-col-date { display: none !important; }
-      #pt-key  { width: 120px; }
-      #pt-from, #pt-to { width: 108px; }
+      #pt-key    { max-width: none; }
+      #pt-from, #pt-to { min-width: 0; }
+      .pt-ctrl-row:nth-child(2) { gap: 4px; }
       .pt-tile-val { font-size: 14px; }
       .pt-tile-lbl { font-size: 9px; }
     }
@@ -476,17 +504,25 @@
       </div>
 
       <div id="pt-controls">
-        <label>Key</label>
-        <input id="pt-key" type="password" placeholder="API key" value="${esc(savedKey)}" autocomplete="off">
-        <label>From</label>
-        <input id="pt-from" type="date" value="${isoDate(week)}">
-        <label>To</label>
-        <input id="pt-to" type="date" value="${isoDate(now)}">
-        <label>Tax%</label>
-        <input id="pt-tax" type="number" value="5" min="0" max="100" step="0.1">
-        <input id="pt-search" type="text" placeholder="&#x1F50D; Search item...">
-        <button class="pt-btn" id="pt-load">Load Data</button>
-        <span id="pt-status"></span>
+        <div class="pt-ctrl-row">
+          <label>Key</label>
+          <input id="pt-key" type="password" placeholder="API key" value="${esc(savedKey)}" autocomplete="off">
+        </div>
+        <div class="pt-ctrl-row">
+          <button class="pt-nav" id="pt-prev" title="Previous period">&#x2039;</button>
+          <label>From</label>
+          <input id="pt-from" type="date" value="${isoDate(week)}">
+          <label>To</label>
+          <input id="pt-to" type="date" value="${isoDate(now)}">
+          <button class="pt-nav" id="pt-next" title="Next period">&#x203A;</button>
+        </div>
+        <div class="pt-ctrl-row wrap">
+          <label>Tax%</label>
+          <input id="pt-tax" type="number" value="5" min="0" max="100" step="0.1">
+          <input id="pt-search" type="text" placeholder="&#x1F50D; Search item...">
+          <button class="pt-btn" id="pt-load">Load Data</button>
+          <span id="pt-status"></span>
+        </div>
       </div>
 
       <div id="pt-summary">
@@ -552,6 +588,8 @@
 
     panel.querySelector('#pt-close')    .addEventListener('click', togglePanel);
     panel.querySelector('#pt-load')     .addEventListener('click', loadData);
+    panel.querySelector('#pt-prev')     .addEventListener('click', () => shiftDates(-1));
+    panel.querySelector('#pt-next')     .addEventListener('click', () => shiftDates(1));
     panel.querySelector('#pt-tax')      .addEventListener('input', rerender);
     panel.querySelector('#pt-chart-btn').addEventListener('click', onChartToggle);
 
@@ -575,6 +613,20 @@
     });
 
     if (savedKey) loadData();
+  }
+
+  function shiftDates(direction) {
+    const fromInput = document.getElementById('pt-from');
+    const toInput   = document.getElementById('pt-to');
+    if (!fromInput.value || !toInput.value) return;
+
+    const fromMs  = new Date(fromInput.value + 'T00:00:00Z').getTime();
+    const toMs    = new Date(toInput.value   + 'T00:00:00Z').getTime();
+    const shiftMs = (toMs - fromMs) + 86400_000;   // range length in ms
+
+    fromInput.value = isoDate(new Date(fromMs + direction * shiftMs));
+    toInput.value   = isoDate(new Date(toMs   + direction * shiftMs));
+    loadData();
   }
 
   function togglePanel() {
