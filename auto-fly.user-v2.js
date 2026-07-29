@@ -152,6 +152,8 @@
   // =================== CLOUD HELPERS ===================
   const CLOUD_POLL_KEY = "tmCloudSyncPoll";
   const CLOUD_SAVE_PERSIST_KEY = "tmCloudSavePersist"; // survives page navigation
+  const CONTROLLER_ONLY_KEY = "tmAutoFlyControllerOnly";
+  function isControllerOnly() { return localStorage.getItem(CONTROLLER_ONLY_KEY) === "true"; }
   let _cloudSavePending = {};
   let _cloudSaveTimer = null;
   let _cloudSaveInProgress = false;
@@ -1327,6 +1329,7 @@
   // Runs every 60s when autoEnabled. Compares current TCT to flight plan.
   let _autoFlyCheckRunning = false;
   async function autoFlyCheck() {
+    if (isControllerOnly()) return;
     if (_autoFlyCheckRunning) return;
     _autoFlyCheckRunning = true;
     try {
@@ -1703,6 +1706,12 @@
           </label>
           <span id="tm-af2-cloud-status" style="font-size:11px;font-weight:bold;min-width:14px;text-align:center;"></span>
           <span id="tm-af2-cloud-next" style="font-size:10px;color:#555;font-variant-numeric:tabular-nums;"></span>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;margin-left:auto;color:#f0a500;" title="View and control settings from this device without running automation. Safe for phone use.">
+            <input id="tm-af2-controller-only" type="checkbox"> Controller only
+          </label>
+        </div>
+        <div id="tm-af2-controller-banner" style="display:none;flex:1 1 100%;background:#2a1f00;border:1px solid #f0a500;border-radius:4px;padding:5px 10px;font-size:11px;color:#f0a500;text-align:center;">
+          Controller Only Mode — automation is paused on this device
         </div>
 
         <!-- Flight Plan -->
@@ -1832,6 +1841,21 @@
         cloudPollEl.addEventListener("change", () => {
           localStorage.setItem(CLOUD_POLL_KEY, String(cloudPollEl.checked));
           cloudPollEl.checked ? startCloudPoll() : stopCloudPoll();
+        });
+      }
+
+      const controllerOnlyEl = document.getElementById("tm-af2-controller-only");
+      const controllerBanner = document.getElementById("tm-af2-controller-banner");
+      const applyControllerOnly = (on) => {
+        if (controllerBanner) controllerBanner.style.display = on ? "block" : "none";
+        if (on) stopAutoCheck(); else if (options.autoEnabled) startAutoCheck();
+      };
+      if (controllerOnlyEl) {
+        controllerOnlyEl.checked = isControllerOnly();
+        applyControllerOnly(controllerOnlyEl.checked);
+        controllerOnlyEl.addEventListener("change", () => {
+          localStorage.setItem(CONTROLLER_ONLY_KEY, String(controllerOnlyEl.checked));
+          applyControllerOnly(controllerOnlyEl.checked);
         });
       }
     }
