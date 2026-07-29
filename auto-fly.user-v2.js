@@ -363,6 +363,7 @@
       console.log("[AutoFly2] Backfilling missing autofly_shopping to Gist");
     }
 
+    _mergeCloudLog(cloud.autofly_log);
     console.log("[AutoFly2] Cloud settings synced");
   }
 
@@ -376,6 +377,7 @@
     if (content === _lastCloudContent) return;
     _lastCloudContent = content;
     applyCloudSettings(cloud);
+    _mergeCloudLog(cloud.autofly_log);
     console.log("[AutoFly2] Cloud settings updated from remote");
   }
 
@@ -834,12 +836,30 @@
 
   function abroadLog(msg, type = "info") {
     const now = new Date();
+    const ts = now.getTime();
     const t = `${String(now.getUTCHours()).padStart(2,"0")}:${String(now.getUTCMinutes()).padStart(2,"0")}:${String(now.getUTCSeconds()).padStart(2,"0")}`;
-    _abroadLog.push({ t, msg, type });
+    _abroadLog.push({ ts, t, msg, type });
     if (_abroadLog.length > 300) _abroadLog.shift();
     try { sessionStorage.setItem(ABROAD_LOG_KEY, JSON.stringify(_abroadLog)); } catch(e) {}
     const list = document.getElementById("tm-af2-log-list");
     if (list) _renderAbroadLogList(list);
+  }
+
+  function _mergeCloudLog(cloudLog) {
+    if (!Array.isArray(cloudLog) || !cloudLog.length) return;
+    const seen = new Set(_abroadLog.map(e => e.ts || (e.t + "|" + e.msg)));
+    let added = 0;
+    for (const entry of cloudLog) {
+      const key = entry.ts || (entry.t + "|" + entry.msg);
+      if (!seen.has(key)) { _abroadLog.push(entry); seen.add(key); added++; }
+    }
+    if (added > 0) {
+      _abroadLog.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+      if (_abroadLog.length > 300) _abroadLog.splice(0, _abroadLog.length - 300);
+      try { sessionStorage.setItem(ABROAD_LOG_KEY, JSON.stringify(_abroadLog)); } catch(e) {}
+      const list = document.getElementById("tm-af2-log-list");
+      if (list) _renderAbroadLogList(list);
+    }
   }
 
   function _renderAbroadLogList(container) {
@@ -885,6 +905,7 @@
       document.getElementById("tm-af2-log-clear").addEventListener("click", () => {
         _abroadLog.length = 0;
         try { sessionStorage.removeItem(ABROAD_LOG_KEY); } catch(e) {}
+        scheduleCloudSave("autofly_log", []);
         _renderAbroadLogList(document.getElementById("tm-af2-log-list"));
       });
     }
@@ -1051,6 +1072,7 @@
       // Fly home
       console.log("[AutoFly2] Shopping done. Flying home...");
       abroadLog("Shopping done — flying home", "info");
+      scheduleCloudSave("autofly_log", _abroadLog.slice());
       const travelHomeBtn = document.querySelector('[aria-controls="travel-home-panel"]');
       safeClick(travelHomeBtn);
       await delay(500);
