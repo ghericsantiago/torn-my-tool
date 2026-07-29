@@ -94,6 +94,8 @@
   // =================== CLOUD HELPERS ===================
   const CLOUD_POLL_KEY = "tmCloudSyncPoll";
   const CLOUD_SAVE_PERSIST_KEY = "tmCloudSavePersist";
+  const CONTROLLER_ONLY_KEY = "tmAutoFlyControllerOnly";
+  function isControllerOnly() { return localStorage.getItem(CONTROLLER_ONLY_KEY) === "true"; }
   let _cloudSavePending = {};
   let _cloudSaveTimer = null;
   let _cloudSaveInProgress = false;
@@ -659,6 +661,7 @@
   };
 
   const depositAllCashOnAttack = () => {
+    if (isControllerOnly()) return;
     if (isHospitalStatus()) return;
     if (!CONFIG.autoAttackDepositEnabled) return;
     const now = Date.now();
@@ -718,6 +721,7 @@
   };
 
   const maintainCashOnHand = () => {
+    if (isControllerOnly()) return;
     if (isHospitalStatus()) return;
     const inPostAttackRecovery = Date.now() < postAttackRecoveryUntil;
     if (inPostAttackRecovery) {
@@ -805,6 +809,12 @@
           </label>
           <span id="tm-vault-cloud-status" style="font-size:11px;font-weight:bold;min-width:14px;text-align:center;"></span>
           <span id="tm-vault-cloud-next" style="font-size:10px;color:#555;font-variant-numeric:tabular-nums;"></span>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;margin-left:auto;color:#f0a500;" title="View and control settings from this device without running automation. Safe for phone use.">
+            <input id="tm-vault-controller-only" type="checkbox"> Controller only
+          </label>
+        </div>
+        <div id="tm-vault-controller-banner" style="display:none;background:#2a1f00;border:1px solid #f0a500;border-radius:4px;padding:5px 10px;font-size:11px;color:#f0a500;text-align:center;margin-top:4px;">
+          Controller Only Mode — automation is paused on this device
         </div>
 
       </div>
@@ -853,6 +863,20 @@
       cloudPollEl.addEventListener("change", () => {
         localStorage.setItem(CLOUD_POLL_KEY, String(cloudPollEl.checked));
         cloudPollEl.checked ? startCloudPoll() : stopCloudPoll();
+      });
+    }
+
+    const controllerOnlyEl = document.getElementById("tm-vault-controller-only");
+    const controllerBanner = document.getElementById("tm-vault-controller-banner");
+    const applyControllerOnly = (on) => {
+      if (controllerBanner) controllerBanner.style.display = on ? "block" : "none";
+    };
+    if (controllerOnlyEl) {
+      controllerOnlyEl.checked = isControllerOnly();
+      applyControllerOnly(controllerOnlyEl.checked);
+      controllerOnlyEl.addEventListener("change", () => {
+        localStorage.setItem(CONTROLLER_ONLY_KEY, String(controllerOnlyEl.checked));
+        applyControllerOnly(controllerOnlyEl.checked);
       });
     }
   };
