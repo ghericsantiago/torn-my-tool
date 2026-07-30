@@ -517,7 +517,7 @@
         "padding:8px 12px 8px 12px","background:#1a1a1a","border:2px solid #f0a500",
         "border-radius:10px","color:#f0a500","font-weight:bold",
         "font-family:Arial,sans-serif","font-size:13px","line-height:1.3",
-        "z-index:999999","box-shadow:0 3px 10px rgba(0,0,0,0.6)",
+        "z-index:2147483641","box-shadow:0 3px 10px rgba(0,0,0,0.6)",
         "display:none","text-align:center","pointer-events:auto","position:fixed",
       ].join(";");
 
@@ -2131,7 +2131,7 @@
         "width:52px","height:52px","border-radius:50%",
         "background:#1a1a1a","border:2px solid #555",
         "color:#eee","font-size:26px","line-height:1",
-        "z-index:999999","cursor:pointer",
+        "z-index:2147483641","cursor:pointer",
         "display:flex","align-items:center","justify-content:center",
         "box-shadow:0 3px 10px rgba(0,0,0,0.6)","touch-action:manipulation",
       ].join(";");
@@ -2141,7 +2141,7 @@
       backdrop.id = "tm-af2-modal";
       backdrop.style.cssText = [
         "position:fixed","inset:0","background:rgba(0,0,0,0.65)",
-        "z-index:999998","display:none","align-items:flex-end",
+        "z-index:2147483640","display:none","align-items:flex-end",
       ].join(";");
       const sheet = document.createElement("div");
       sheet.style.cssText = [
