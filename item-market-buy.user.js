@@ -2084,6 +2084,9 @@
         .then(() => initCloudSync())
         .catch(e => console.warn(LOG, "bazaar cloud init error:", e));
       startCloudPoll();
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") pollCloudSync();
+      }, { passive: true });
       await wait(800);
       try {
         await runBazaarAutoBuy();
@@ -2133,6 +2136,11 @@
       .then(() => initCloudSync())
       .catch(e => console.warn(LOG, "cloud init error:", e));
     startCloudPoll();
+    // Trigger an immediate cloud check whenever the tab gets focus so remote
+    // commands (Go Home) are detected without waiting for the 15s poll interval.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") pollCloudSync();
+    }, { passive: true });
 
     // Start bazaar sniper if it was enabled in the last session.
     if (settings.bazaarSniperEnabled) startBazaarSnipe();
