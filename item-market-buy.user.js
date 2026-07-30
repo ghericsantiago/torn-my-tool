@@ -1099,6 +1099,7 @@
   // ---- Main bazaar auto-buy routine — runs once on bazaar.php ----
   async function runBazaarAutoBuy() {
     if (!isBazaarPage()) return;
+    if (isControllerOnly()) return;
 
     const params = new URLSearchParams(window.location.search);
     if (params.get("tm-autobuy") !== "1") return;
@@ -1370,6 +1371,7 @@
   let _bazaarSnipeBusy   = false;
 
   async function runBazaarSnipeScan() {
+    if (isControllerOnly())                 return;
     if (_bazaarSnipeBusy)                   return;
     if (!settings.bazaarSniperEnabled)      return;
     if (!settings.enabled)                  return; // master auto-buy toggle
