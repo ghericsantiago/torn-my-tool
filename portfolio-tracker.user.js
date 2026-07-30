@@ -79,6 +79,7 @@
       box-shadow: -3px 0 12px rgba(0,0,0,0.55);
       transition: opacity 0.2s, filter 0.15s;
       text-shadow: 0 1px 3px rgba(0,0,0,0.4);
+      padding-right: 13px;
     }
     #pt-toggle:hover { filter: brightness(1.15); }
     #pt-toggle.open  { opacity: 0; pointer-events: none; }
