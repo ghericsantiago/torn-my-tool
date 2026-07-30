@@ -69,7 +69,7 @@
       padding: 18px 0;
       border-radius: 6px 0 0 6px;
       cursor: pointer;
-      z-index: 2147483646;
+      z-index: 2147483642;
       writing-mode: vertical-rl;
       text-orientation: mixed;
       font: 700 10px/1 'Arial', sans-serif;
