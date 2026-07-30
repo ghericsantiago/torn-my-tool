@@ -37,7 +37,7 @@
     noBuySeconds: 20, // advance to next item after this long with no purchase
     enabled: false,
     bazaarSniperEnabled: false, // scan weav3r API and navigate to bazaar when price is right
-    bazaarPollSeconds: 60,      // how often to scan (seconds)
+    bazaarPollSeconds: 5,       // how often to scan (seconds)
     bazaarMaxStaleMins: 15,     // reject listings older than this (minutes)
   };
 
@@ -493,6 +493,40 @@
     if (!header) return "";
     const title = header.querySelector('[class*="title___"]');
     return title ? title.textContent.trim() : "";
+  }
+
+  // DOM-based item ID cache — populated as the user browses the item market.
+  // Lets the Bazaar Sniper work without a Torn API key.
+  const DOM_ITEM_IDS_KEY = "tmDomItemIds";
+  let _domItemIds = (() => {
+    try { return JSON.parse(localStorage.getItem(DOM_ITEM_IDS_KEY) || "{}"); }
+    catch (e) { return {}; }
+  })();
+  function _saveDomItemIds() {
+    try { localStorage.setItem(DOM_ITEM_IDS_KEY, JSON.stringify(_domItemIds)); } catch (e) {}
+  }
+  function readCurrentItemIdFromDom() {
+    // Torn encodes the item ID in aria-controls="wai-itemInfo-{id}" or "wai-itemInfo-{n}-{id}"
+    const btns = document.querySelectorAll('button[aria-controls^="wai-itemInfo-"]');
+    for (const btn of btns) {
+      const parts = (btn.getAttribute("aria-controls") || "").split("-");
+      // Walk from the end; the item ID is the last numeric segment > 0
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const n = parseInt(parts[i], 10);
+        if (n > 0) return String(n);
+      }
+    }
+    return null;
+  }
+  function _cacheCurrentDomItem() {
+    const name = getSelectedItemTitle();
+    const id   = readCurrentItemIdFromDom();
+    if (!name || !id) return;
+    const key = name.toLowerCase();
+    if (_domItemIds[key] !== id) {
+      _domItemIds[key] = id;
+      _saveDomItemIds();
+    }
   }
 
   function getSearchInput() {
@@ -952,8 +986,9 @@
   // then auto-buys the maximum affordable quantity on the bazaar page.
   // =========================================================================
 
-  const BAZAAR_CTX_KEY = "tmBazaarAutoBuyCtx";
-  const WEAV3R_API    = "https://weav3r.dev/api/";
+  const BAZAAR_CTX_KEY  = "tmBazaarAutoBuyCtx";
+  const SNIPE_RETURN_KEY = "tmSnipeReturn"; // item name to re-select after returning from bazaar
+  const WEAV3R_API      = "https://weav3r.dev/api/";
 
   function isBazaarPage() {
     return /bazaar\.php/i.test(location.pathname);
@@ -1009,12 +1044,16 @@
     }
   }
 
-  // Look up the numeric Torn item ID by name from the tornItems API cache.
+  // Look up the numeric Torn item ID by name.
+  // Primary: tornItems cache (requires Torn API key).
+  // Fallback: DOM-observed item ID cache populated while browsing the item market.
   function getItemIdByName(name) {
-    if (!tornItems) return null;
     const lower = name.toLowerCase();
-    const entry = Object.entries(tornItems).find(([, v]) => v.name.toLowerCase() === lower);
-    return entry ? entry[0] : null; // returns string key, e.g. "206"
+    if (tornItems) {
+      const entry = Object.entries(tornItems).find(([, v]) => v.name.toLowerCase() === lower);
+      if (entry) return entry[0];
+    }
+    return _domItemIds[lower] || null;
   }
 
   // Parse the unit price from a bazaar item card [data-testid="price"].
@@ -1336,18 +1375,32 @@
 
     _bazaarSnipeBusy = true;
     try {
+      // Cache the item ID for whatever is currently displayed in the item market.
+      // This builds up the DOM-based fallback so the sniper works without a Torn API key.
+      _cacheCurrentDomItem();
+
       // Ensure the item cache is loaded so we can look up item IDs.
       if (!tornItems) await fetchTornItems();
 
       const list = settings.items || [];
-      for (const item of list) {
+
+      // Focus on the currently displayed item if it's in the watchlist.
+      // This makes the sniper continuously buy the item the user is viewing
+      // rather than cycling through all watchlist items.
+      const currentName    = getSelectedItemTitle();
+      const currentWatchItem = currentName
+        ? list.find(i => !i.skipped && i.name.toLowerCase() === currentName.toLowerCase())
+        : null;
+      const itemsToScan = currentWatchItem ? [currentWatchItem] : list;
+
+      for (const item of itemsToScan) {
         if (item.skipped) continue;
         const cap = parseAmount(item.maxPrice);
         if (cap <= 0) continue;
 
         const itemId = getItemIdByName(item.name);
         if (!itemId) {
-          console.log(LOG, `[Bazaar] No item ID for "${item.name}" — set a Torn API key for autocomplete`);
+          console.log(LOG, `[Bazaar] No item ID for "${item.name}" — navigate to it in the item market to auto-detect its ID, or set a Torn API key`);
           continue;
         }
 
@@ -1381,6 +1434,9 @@
         // Record this visit so we don't return to the same listing again until
         // the seller updates their bazaar (new last_checked timestamp).
         markBazaarVisited(listing.player_id, itemId, listing.last_checked || 0);
+
+        // Remember which item we're sniping so we can re-select it when we return.
+        sessionStorage.setItem(SNIPE_RETURN_KEY, item.name);
 
         // Store context for the bazaar page to pick up after navigation.
         sessionStorage.setItem(BAZAAR_CTX_KEY, JSON.stringify({
@@ -1418,7 +1474,7 @@
     stopBazaarSnipe();
     if (!settings.bazaarSniperEnabled || !isItemMarketPage()) return;
     runBazaarSnipeScan(); // run immediately
-    const ms = Math.max(30, settings.bazaarPollSeconds || 60) * 1000;
+    const ms = Math.max(5, settings.bazaarPollSeconds || 5) * 1000;
     _bazaarSnipeTimer = setInterval(runBazaarSnipeScan, ms);
     console.log(LOG, `[Bazaar] Sniper started — polling every ${Math.round(ms / 1000)}s`);
   }
@@ -1667,7 +1723,7 @@
             <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
               <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="How often to poll the weav3r API for each item">
                 Poll every
-                <input id="tm-imbuy-bazaar-poll" type="number" min="30" max="600"
+                <input id="tm-imbuy-bazaar-poll" type="number" min="5" max="600"
                   style="width:52px;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;text-align:center;">
                 s
               </label>
@@ -1856,7 +1912,7 @@
 
     const updateBazaarStatus = (msg) => { if (bazaarStatusEl) bazaarStatusEl.textContent = msg; };
 
-    if (bazaarPollEl)    bazaarPollEl.value  = String(settings.bazaarPollSeconds  || 60);
+    if (bazaarPollEl)    bazaarPollEl.value  = String(settings.bazaarPollSeconds  || 5);
     if (bazaarStaleEl)   bazaarStaleEl.value = String(settings.bazaarMaxStaleMins || 15);
     if (bazaarEnabledEl) bazaarEnabledEl.checked = !!settings.bazaarSniperEnabled;
 
@@ -1875,7 +1931,7 @@
     }
     if (bazaarPollEl) {
       bazaarPollEl.addEventListener("change", () => {
-        settings.bazaarPollSeconds = Math.max(30, parseInt(bazaarPollEl.value || "60", 10));
+        settings.bazaarPollSeconds = Math.max(5, parseInt(bazaarPollEl.value || "5", 10));
         saveSettings(settings);
         if (settings.bazaarSniperEnabled) startBazaarSnipe(); // restart with new interval
       });
@@ -2050,6 +2106,16 @@
 
     // Start bazaar sniper if it was enabled in the last session.
     if (settings.bazaarSniperEnabled) startBazaarSnipe();
+
+    // After returning from a bazaar sniper buy, re-select the same item so the
+    // sniper continues buying it without the user having to navigate back manually.
+    (async () => {
+      const returnItem = sessionStorage.getItem(SNIPE_RETURN_KEY);
+      if (!returnItem) return;
+      sessionStorage.removeItem(SNIPE_RETURN_KEY);
+      await waitForNode(() => getSearchInput(), 10000);
+      await ensureItemSelected(returnItem);
+    })();
   }
 
   // Debug helpers for console testing.
