@@ -39,7 +39,7 @@
     bazaarSniperEnabled: false, // scan weav3r API and navigate to bazaar when price is right
     bazaarPollSeconds: 5,       // how often to scan (seconds)
     bazaarMaxStaleMins: 15,     // reject listings older than this (minutes)
-    redirectToHome: false,      // after bazaar auto-buy, go to home page instead of item market
+    goHome: false,              // remote command: navigate to home page on the automation device
   };
 
   // Parse the multi-line items textarea into [{ name, maxPrice }].
@@ -223,9 +223,18 @@
     if (panel) {
       const timeoutEl = panel.querySelector("#tm-imbuy-timeout");
       const enabledEl = panel.querySelector("#tm-imbuy-enabled");
+      const goHomeEl  = panel.querySelector("#tm-imbuy-go-home");
       if (timeoutEl) timeoutEl.value = String(settings.noBuySeconds ?? 20);
       if (enabledEl) enabledEl.checked = !!settings.enabled;
+      if (goHomeEl)  goHomeEl.checked  = !!settings.goHome;
       renderItemList();
+    }
+    // Remote "Go Home" command: automation device navigates home and resets the flag.
+    if (settings.goHome && !isControllerOnly()) {
+      console.log(LOG, "Go Home command received — navigating to home page");
+      settings.goHome = false;
+      saveSettings(settings);
+      window.location.href = "https://www.torn.com/index.php";
     }
   }
 
@@ -1117,9 +1126,7 @@
 
     const { itemId, itemName, maxPrice, lastChecked, returnUrl } = ctx;
     const goBack = () => {
-      window.location.href = settings.redirectToHome
-        ? "https://www.torn.com/index.php"
-        : (returnUrl || "https://www.torn.com/page.php?sid=ItemMarket");
+      window.location.href = returnUrl || "https://www.torn.com/page.php?sid=ItemMarket";
     };
 
     if (!settings.enabled) {
@@ -1703,8 +1710,8 @@
             <input id="tm-imbuy-cloud-poll" type="checkbox"> Cloud sync
           </label>
           <span id="tm-imbuy-cloud-next" style="font-size:10px;color:#555;font-variant-numeric:tabular-nums;"></span>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="After a bazaar auto-buy completes, redirect to the Torn home page instead of returning to the item market.">
-            <input id="tm-imbuy-redirect-home" type="checkbox"> Go home after buy
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="When checked, the automation device navigates to the Torn home page. Syncs via cloud — check this from your phone to send it home.">
+            <input id="tm-imbuy-go-home" type="checkbox"> Go Home
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;margin-left:auto;color:#f0a500;" title="View and control settings from this device without running automation. Safe for phone use.">
             <input id="tm-imbuy-controller-only" type="checkbox"> Controller only
@@ -1912,11 +1919,11 @@
       });
     }
 
-    const redirectHomeEl = $("tm-imbuy-redirect-home");
-    if (redirectHomeEl) {
-      redirectHomeEl.checked = !!settings.redirectToHome;
-      redirectHomeEl.addEventListener("change", () => {
-        settings.redirectToHome = !!redirectHomeEl.checked;
+    const goHomeEl = $("tm-imbuy-go-home");
+    if (goHomeEl) {
+      goHomeEl.checked = !!settings.goHome;
+      goHomeEl.addEventListener("change", () => {
+        settings.goHome = !!goHomeEl.checked;
         saveSettings(settings);
       });
     }
@@ -2071,6 +2078,12 @@
     // Wait for the DOM to settle before interacting.
     const _bazaarBoot = async () => {
       try { injectUI(); } catch (e) {}
+      // Start cloud sync on the bazaar page so the "Go Home" remote command
+      // is detected and acted on immediately — even mid-buy.
+      flushPersistedCloudSave()
+        .then(() => initCloudSync())
+        .catch(e => console.warn(LOG, "bazaar cloud init error:", e));
+      startCloudPoll();
       await wait(800);
       try {
         await runBazaarAutoBuy();
