@@ -1,11 +1,12 @@
 ﻿// ==UserScript==
 // @name         Torn Item Market Auto Buy
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      2.0
 // @description  Auto-buy a watchlist of items on the Torn item market, sizing quantity to your cash on hand, cycling items on a no-buy timeout, with an on-page settings panel.
 // @author       GitHub Copilot
 // @match        https://www.torn.com/page.php*
 // @match        https://www.torn.com/imarket.php*
+// @match        https://www.torn.com/bazaar.php*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -35,6 +36,9 @@
     items: [], // watchlist: [{ name, maxPrice }]
     noBuySeconds: 20, // advance to next item after this long with no purchase
     enabled: false,
+    bazaarSniperEnabled: false, // scan weav3r API and navigate to bazaar when price is right
+    bazaarPollSeconds: 60,      // how often to scan (seconds)
+    bazaarMaxStaleMins: 15,     // reject listings older than this (minutes)
   };
 
   // Parse the multi-line items textarea into [{ name, maxPrice }].
@@ -732,6 +736,7 @@
     if (!settings.enabled) return;
     if (!isItemMarketPage()) return;
     if (busy) return;
+    if (_bazaarSnipeBusy) return; // sniper is navigating to a bazaar
     busy = true;
     try {
       const list = settings.items || [];
@@ -923,6 +928,466 @@
       advanceTimer = null;
     }
   }
+
+  // =========================================================================
+  // BAZAAR SNIPER — polls weav3r API on the item market page, navigates to
+  // a seller's bazaar when a watched item is at or below the target price,
+  // then auto-buys the maximum affordable quantity on the bazaar page.
+  // =========================================================================
+
+  const BAZAAR_CTX_KEY = "tmBazaarAutoBuyCtx";
+  const WEAV3R_API    = "https://weav3r.dev/api/";
+
+  function isBazaarPage() {
+    return /bazaar\.php/i.test(location.pathname);
+  }
+
+  // ---- Visited-bazaar cache — prevents revisiting a listing with the same
+  //      last_checked timestamp (only revisit when the seller restocks/updates).
+  const BAZAAR_VISITED_KEY = "tmBazaarVisited";
+  const BAZAAR_VISITED_TTL = 24 * 60 * 60; // prune entries older than 24 h
+
+  function _loadBazaarVisited() {
+    try { return JSON.parse(localStorage.getItem(BAZAAR_VISITED_KEY) || "{}"); }
+    catch (e) { return {}; }
+  }
+
+  function isBazaarVisited(playerId, itemId, lastChecked) {
+    const entry = _loadBazaarVisited()[`${playerId}_${itemId}`];
+    if (!entry) return false;
+    // Same timestamp → definitely same listing, skip.
+    if (entry.lastChecked === lastChecked) return true;
+    // Different timestamp (weav3r re-polled) but visited very recently → still skip.
+    // Prevents rapid re-visiting when weav3r updates last_checked without the seller restocking.
+    const now = Math.floor(Date.now() / 1000);
+    return (now - (entry.visitedAt || 0)) < 300; // 5-minute cooldown
+  }
+
+  function markBazaarVisited(playerId, itemId, lastChecked) {
+    const now = Math.floor(Date.now() / 1000);
+    const cache = _loadBazaarVisited();
+    // Prune stale entries while we have the cache open.
+    for (const [k, v] of Object.entries(cache)) {
+      if (now - (v.visitedAt || 0) > BAZAAR_VISITED_TTL) delete cache[k];
+    }
+    cache[`${playerId}_${itemId}`] = { lastChecked, visitedAt: now };
+    try { localStorage.setItem(BAZAAR_VISITED_KEY, JSON.stringify(cache)); } catch (e) {}
+  }
+
+  function clearBazaarVisited() {
+    try { localStorage.removeItem(BAZAAR_VISITED_KEY); } catch (e) {}
+  }
+  // ---- end visited-bazaar cache ----
+
+  // Fetch cheapest bazaar listings for itemId priced <= maxPrice from weav3r.
+  async function fetchWeav3rMarketplace(itemId, maxPrice) {
+    try {
+      const url = `${WEAV3R_API}marketplace/${itemId}?maxPrice=${maxPrice}&limit=10`;
+      const r = await gmFetch(url);
+      if (!r.ok) return null;
+      return JSON.parse(r.text);
+    } catch (e) {
+      console.warn(LOG, "[Bazaar] fetchWeav3rMarketplace failed", e);
+      return null;
+    }
+  }
+
+  // Look up the numeric Torn item ID by name from the tornItems API cache.
+  function getItemIdByName(name) {
+    if (!tornItems) return null;
+    const lower = name.toLowerCase();
+    const entry = Object.entries(tornItems).find(([, v]) => v.name.toLowerCase() === lower);
+    return entry ? entry[0] : null; // returns string key, e.g. "206"
+  }
+
+  // Parse the unit price from a bazaar item card [data-testid="price"].
+  // The element contains a text node with "$NNN,NNN" plus child divs for
+  // rate/delta info — read only the first TEXT_NODE to avoid including those.
+  function parseBazaarItemPrice(card) {
+    const el = card.querySelector('[data-testid="price"]');
+    if (!el) return 0;
+    for (const node of el.childNodes) {
+      if (node.nodeType !== Node.TEXT_NODE) continue;
+      const m = node.textContent?.replace(/,/g, "").match(/(\d+)/);
+      if (m) return Number(m[1]);
+    }
+    const m = el.textContent?.match(/\$([\d,]+)/);
+    return m ? Number(m[1].replace(/,/g, "")) : 0;
+  }
+
+  // ---- Status toast shown on the bazaar page ----
+  let _bazaarToastEl = null;
+  function showBazaarToast(msg, type) {
+    if (!_bazaarToastEl) {
+      _bazaarToastEl = document.createElement("div");
+      _bazaarToastEl.id = "tm-bazaar-toast";
+      _bazaarToastEl.style.cssText = [
+        "position:fixed", "top:16px", "left:50%",
+        "transform:translateX(-50%)", "z-index:999999",
+        "padding:10px 18px", "border-radius:6px",
+        "font-family:Arial,sans-serif", "font-size:13px", "color:#fff",
+        "box-shadow:0 4px 16px rgba(0,0,0,.55)", "pointer-events:none",
+        "transition:opacity .3s", "max-width:min(90vw,500px)",
+        "text-align:center", "line-height:1.4",
+      ].join(";");
+      document.body.appendChild(_bazaarToastEl);
+    }
+    const colors = { info: "#1d4ed8", success: "#15803d", warn: "#b45309", error: "#b91c1c" };
+    _bazaarToastEl.style.background = colors[type] || colors.info;
+    _bazaarToastEl.style.opacity = "1";
+    _bazaarToastEl.textContent = msg;
+    console.log(LOG, "[Bazaar]", msg);
+  }
+
+  // ---- Main bazaar auto-buy routine — runs once on bazaar.php ----
+  async function runBazaarAutoBuy() {
+    if (!isBazaarPage()) return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tm-autobuy") !== "1") return;
+
+    // Strip our param from the URL immediately so a reload doesn't re-trigger.
+    params.delete("tm-autobuy");
+    const qs = params.toString();
+    history.replaceState({}, "", `${location.pathname}${qs ? "?" + qs : ""}${location.hash}`);
+
+    // Recover context stored before navigation.
+    let ctx;
+    try { ctx = JSON.parse(sessionStorage.getItem(BAZAAR_CTX_KEY) || "null"); } catch {}
+    if (!ctx) { showBazaarToast("Auto-buy: no context found — aborted", "error"); return; }
+    sessionStorage.removeItem(BAZAAR_CTX_KEY);
+
+    const { itemId, itemName, maxPrice, lastChecked, returnUrl } = ctx;
+    const goBack = () => {
+      window.location.href = returnUrl || "https://www.torn.com/page.php?sid=ItemMarket";
+    };
+    showBazaarToast(`Auto-buy: locating "${itemName}" in this bazaar…`, "info");
+
+    // Reject stale listings — they may already have been purchased.
+    const now = Math.floor(Date.now() / 1000);
+    const maxStaleSecs = Math.max(5, settings.bazaarMaxStaleMins || 15) * 60;
+    if (lastChecked > 0 && (now - lastChecked) > maxStaleSecs) {
+      const ageMins = Math.round((now - lastChecked) / 60);
+      showBazaarToast(
+        `Aborted: listing is ${ageMins}m old (max ${settings.bazaarMaxStaleMins || 15}m). May already be sold.`,
+        "warn"
+      );
+      return;
+    }
+
+    // Wait for the React bazaar grid to render.
+    const grid = await waitForNode('[data-testid="bazaar-items"]', 18000);
+    if (!grid) { showBazaarToast("Bazaar grid did not load in time", "error"); return; }
+
+    // Filter the bazaar to the target item using the search input.
+    const searchInput = document.querySelector('[data-testid="autocomplete-input"]');
+    if (searchInput) {
+      setReactInputValue(searchInput, itemName);
+      await wait(900);
+    }
+
+    // Find the item card whose image src contains the itemId.
+    const findCard = () => {
+      for (const card of document.querySelectorAll('[data-testid="item"]')) {
+        if (card.querySelector(`img[src*="/images/items/${itemId}/"]`)) return card;
+      }
+      return null;
+    };
+
+    let card = await waitForNode(findCard, 10000);
+    if (!card && searchInput) {
+      // Filter might have hidden it if the name doesn't match; try without filter.
+      setReactInputValue(searchInput, "");
+      await wait(700);
+      card = await waitForNode(findCard, 8000);
+    }
+
+    if (!card) {
+      showBazaarToast(
+        `"${itemName}" not found in this bazaar — may already be sold. Going back…`,
+        "warn"
+      );
+      await wait(2500);
+      goBack();
+      return;
+    }
+
+    // Verify price is still within budget.
+    const actualPrice = parseBazaarItemPrice(card);
+    if (actualPrice <= 0) { showBazaarToast("Could not read item price", "error"); return; }
+    if (actualPrice > maxPrice) {
+      showBazaarToast(
+        `Price $${formatNumber(actualPrice)} > target $${formatNumber(maxPrice)} — going back…`,
+        "warn"
+      );
+      await wait(2500);
+      goBack();
+      return;
+    }
+
+    // Determine how many we can afford.
+    const stockEl  = card.querySelector('[data-testid="amount-value"]');
+    const stockTxt = stockEl?.textContent?.trim();
+    // Use parsed stock if the element exists; fall back to 9999 only when it's absent (not when it shows "0").
+    const stock    = stockTxt != null ? Math.max(0, parseInt(stockTxt, 10) || 0) : 9999;
+    const money   = getMoneyOnHand();
+    const qty     = Math.min(stock, Math.floor(money / actualPrice));
+
+    if (qty < 1) {
+      showBazaarToast(
+        `Not enough cash: need $${formatNumber(actualPrice)}, have $${formatNumber(money)}`,
+        "error"
+      );
+      return;
+    }
+
+    showBazaarToast(
+      `Buying ${formatNumber(qty)}x ${itemName} @ $${formatNumber(actualPrice)} (cash $${formatNumber(money)})…`,
+      "info"
+    );
+
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    await wait(600);
+
+    // Click the activate-buy-button on the card.
+    const buyActivateBtn = card.querySelector('[data-testid="activate-buy-button"]');
+    if (!buyActivateBtn) { showBazaarToast("Buy button not found on item card", "error"); return; }
+    await simulateMouseMove(buyActivateBtn);
+    safeClick(buyActivateBtn);
+    await wait(700);
+
+    // The bazaar reveals buy controls INLINE inside the item card — there is no
+    // separate dialog.  After clicking activate-buy-button a quantity input and
+    // a "Buy / fill max" button appear within the card (or its row container).
+    const rowContainer = card.closest('[data-testid="bazaar-items-row"]') || card.parentElement || card;
+
+    const findQtyInput = () =>
+      card.querySelector('input[type="number"]')                         ||
+      card.querySelector('input.input-money:not([type="hidden"])')       ||
+      rowContainer.querySelector('input[type="number"]')                 ||
+      rowContainer.querySelector('input.input-money:not([type="hidden"])');
+
+    // Buy button — must NOT match "fill max" (that only fills the qty input).
+    const findBuyBtn = () =>
+      card.querySelector('button[class*="buyButton___"]')                ||
+      card.querySelector('button[aria-label*="Buy"]')                    ||
+      rowContainer.querySelector('button[class*="buyButton___"]')        ||
+      rowContainer.querySelector('button[aria-label*="Buy"]')            ||
+      [...rowContainer.querySelectorAll("button")].find(b => {
+        const text = (b.textContent || "").trim();
+        return /^buy/i.test(text) && !/fill/i.test(text) && b.offsetParent !== null;
+      });
+
+    // "Fill max" link/button — clicks it to auto-fill max affordable quantity.
+    const findFillMaxEl = () =>
+      [...rowContainer.querySelectorAll("button, a, span")].find(b =>
+        /fill\s*max/i.test(b.textContent || "") && b.offsetParent !== null
+      );
+
+    // Wait for either the quantity input or the buy button to appear inside the card.
+    const inlineReady = await waitForNode(
+      () => findQtyInput() || findBuyBtn(),
+      5000
+    );
+
+    if (!inlineReady) {
+      // As a fallback, check for an overlay dialog (some bazaar versions use one).
+      const fallbackDialog = (
+        document.querySelector('[class*="buyDialog___"]') ||
+        document.querySelector('[role="dialog"]')
+      );
+      if (!fallbackDialog) {
+        const earlySuccess = document.querySelector('[class*="successText___"]');
+        if (earlySuccess) {
+          showBazaarToast(`Bought ${formatNumber(qty)}x ${itemName} @ $${formatNumber(actualPrice)}`, "success");
+          return;
+        }
+        showBazaarToast("Buy controls did not appear — please buy manually", "warn");
+        return;
+      }
+      // Handle the fallback dialog path the same way (controls inside the dialog).
+      const dQty = fallbackDialog.querySelector('input[type="number"]') ||
+                   fallbackDialog.querySelector('input.input-money:not([type="hidden"])');
+      const dBtn = fallbackDialog.querySelector('button[class*="buyButton___"]') ||
+                   fallbackDialog.querySelector('button[aria-label*="Buy"]');
+      if (dQty) { setReactInputValue(dQty, qty); await wait(300); }
+      if (dBtn) { if (dBtn.disabled) { dBtn.disabled = false; dBtn.removeAttribute("disabled"); } await simulateMouseMove(dBtn); safeClick(dBtn); }
+      await wait(500);
+    } else {
+      // ---- Inline controls path (normal bazaar) ----
+
+      // Step 1: Click "fill max" if available — Torn auto-fills min(stock, cash/price).
+      const fillMaxEl = findFillMaxEl();
+      if (fillMaxEl) {
+        await simulateMouseMove(fillMaxEl);
+        safeClick(fillMaxEl);
+        await wait(400);
+      }
+
+      // Step 2: Always verify and enforce our computed max qty.
+      // "fill max" may have used stock-only (ignoring cash), or may not exist.
+      const qtyInput = findQtyInput();
+      if (qtyInput) {
+        const current = Number(qtyInput.value) || 0;
+        if (current !== qty) {
+          setReactInputValue(qtyInput, qty);
+          await wait(350);
+          if (Number(qtyInput.value) !== qty) {
+            setReactInputValue(qtyInput, qty);
+            await wait(250);
+          }
+        }
+      }
+
+      await wait(200);
+
+      // Step 3: Click the actual buy button (distinct from fill max).
+      const confirmBtn = findBuyBtn();
+      if (!confirmBtn) { showBazaarToast("Buy button not found in inline controls", "error"); return; }
+      if (confirmBtn.disabled) { confirmBtn.disabled = false; confirmBtn.removeAttribute("disabled"); }
+      await simulateMouseMove(confirmBtn);
+      safeClick(confirmBtn);
+      await wait(500);
+    }
+
+    // Wait for the "Buy N x Item for $Price? → Yes / No" confirmation popup.
+    const confirmYesBtn = await waitForNode(
+      () => [...document.querySelectorAll("button")].find(
+        b => /^yes$/i.test((b.textContent || "").trim()) && b.offsetParent !== null
+      ),
+      3000
+    );
+    if (confirmYesBtn) {
+      await simulateMouseMove(confirmYesBtn);
+      safeClick(confirmYesBtn);
+      await wait(500);
+    }
+
+    const success = await waitForNode(
+      () => document.querySelector('[class*="successText___"]'),
+      3000
+    );
+    if (success) {
+      showBazaarToast(`Bought ${formatNumber(qty)}x ${itemName} @ $${formatNumber(actualPrice)} — going back…`, "success");
+      const closeBtn = document.querySelector(
+        'button[aria-label="Close panel"], button[class*="closeButton___"]'
+      );
+      if (closeBtn) { safeClick(closeBtn); await wait(200); }
+      await wait(2000);
+      goBack();
+    } else {
+      showBazaarToast(`Buy submitted for ${itemName} — check inventory to confirm`, "info");
+      await wait(2500);
+      goBack();
+    }
+  }
+
+  // ---- Bazaar snipe scan — runs on the item market page ----
+  let _bazaarSnipeTimer  = null;
+  let _bazaarSnipeBusy   = false;
+
+  async function runBazaarSnipeScan() {
+    if (_bazaarSnipeBusy)                   return;
+    if (!settings.bazaarSniperEnabled)      return;
+    if (!isItemMarketPage())                return;
+    if (busy)                               return; // item-market buy in progress
+
+    _bazaarSnipeBusy = true;
+    try {
+      // Ensure the item cache is loaded so we can look up item IDs.
+      if (!tornItems) await fetchTornItems();
+
+      const list = settings.items || [];
+      for (const item of list) {
+        if (item.skipped) continue;
+        const cap = parseAmount(item.maxPrice);
+        if (cap <= 0) continue;
+
+        const itemId = getItemIdByName(item.name);
+        if (!itemId) {
+          console.log(LOG, `[Bazaar] No item ID for "${item.name}" — set a Torn API key for autocomplete`);
+          continue;
+        }
+
+        setStatus(`[Bazaar] Checking ${item.name} via weav3r API…`);
+        const data = await fetchWeav3rMarketplace(itemId, cap);
+        if (!data?.listings?.length) continue;
+
+        const now         = Math.floor(Date.now() / 1000);
+        const maxStaleSec = Math.max(5, settings.bazaarMaxStaleMins || 15) * 60;
+
+        // Keep only listings that are fresh, within budget, and not already visited
+        // with the same last_checked timestamp (i.e. not restocked since our visit).
+        const valid = data.listings
+          .filter(l => l.price <= cap && (now - (l.last_checked || 0)) < maxStaleSec)
+          .filter(l => !isBazaarVisited(l.player_id, itemId, l.last_checked || 0))
+          .sort((a, b) => a.price - b.price);
+
+        if (!valid.length) continue;
+
+        const listing = valid[0];
+        const money   = getMoneyOnHand();
+        if (money < listing.price) continue; // can't afford even one
+
+        const ageSecs = now - (listing.last_checked || 0);
+        console.log(
+          LOG,
+          `[Bazaar] Found "${item.name}" @ $${formatNumber(listing.price)} from player ${listing.player_id}`,
+          `(updated ${Math.round(ageSecs / 60)}m ago)`
+        );
+
+        // Record this visit so we don't return to the same listing again until
+        // the seller updates their bazaar (new last_checked timestamp).
+        markBazaarVisited(listing.player_id, itemId, listing.last_checked || 0);
+
+        // Store context for the bazaar page to pick up after navigation.
+        sessionStorage.setItem(BAZAAR_CTX_KEY, JSON.stringify({
+          itemId:      String(itemId),
+          itemName:    item.name,
+          maxPrice:    cap,
+          lastChecked: listing.last_checked || 0,
+          money,
+          listing,
+          returnUrl:   location.href,
+        }));
+
+        const bazaarUrl =
+          `https://www.torn.com/bazaar.php` +
+          `?userId=${listing.player_id}` +
+          `&itemId=${itemId}` +
+          `&v=${listing.last_checked || 0}` +
+          `&tm-autobuy=1#/`;
+
+        setStatus(`[Bazaar] Navigating → ${item.name} @ $${formatNumber(listing.price)} …`);
+        await wait(400);
+        window.location.href = bazaarUrl;
+        return; // navigation is in flight; don't start another scan
+      }
+
+      setStatus("[Bazaar] Scan done — no qualifying listings right now.");
+    } catch (e) {
+      console.warn(LOG, "runBazaarSnipeScan error", e);
+    } finally {
+      _bazaarSnipeBusy = false;
+    }
+  }
+
+  function startBazaarSnipe() {
+    stopBazaarSnipe();
+    if (!settings.bazaarSniperEnabled || !isItemMarketPage()) return;
+    runBazaarSnipeScan(); // run immediately
+    const ms = Math.max(30, settings.bazaarPollSeconds || 60) * 1000;
+    _bazaarSnipeTimer = setInterval(runBazaarSnipeScan, ms);
+    console.log(LOG, `[Bazaar] Sniper started — polling every ${Math.round(ms / 1000)}s`);
+  }
+
+  function stopBazaarSnipe() {
+    if (_bazaarSnipeTimer) { clearInterval(_bazaarSnipeTimer); _bazaarSnipeTimer = null; }
+  }
+
+  // =========================================================================
+  // END BAZAAR SNIPER
+  // =========================================================================
 
   // -------------------------------------------------------------------------
   // UI
@@ -1143,6 +1608,41 @@
           Controller Only Mode — automation is paused on this device
         </div>
 
+        <!-- Bazaar Sniper -->
+        <details id="tm-imbuy-bazaar-toggle" style="flex:1 1 100%;border-top:1px solid #333;padding-top:8px;">
+          <summary style="cursor:pointer;color:#aaa;font-size:12px;user-select:none;list-style:none;display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-weight:bold;">&#128270; Bazaar Sniper <span style="font-weight:normal;color:#666;font-size:11px;">(weav3r API)</span></span>
+          </summary>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px;">
+            <div style="color:#666;font-size:11px;line-height:1.4;">
+              Polls weav3r.dev for bazaar listings. When a watched item hits your max price, navigates to that seller's bazaar and buys the maximum quantity you can afford.
+            </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
+                <input id="tm-imbuy-bazaar-enabled" type="checkbox"> Enable Bazaar Sniper
+              </label>
+            </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+              <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="How often to poll the weav3r API for each item">
+                Poll every
+                <input id="tm-imbuy-bazaar-poll" type="number" min="30" max="600"
+                  style="width:52px;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;text-align:center;">
+                s
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Listings older than this are skipped — they may already be sold">
+                Max listing age
+                <input id="tm-imbuy-bazaar-stale" type="number" min="1" max="60"
+                  style="width:42px;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;text-align:center;">
+                min
+              </label>
+            </div>
+            <div style="color:#555;font-size:10px;">
+              Requires a Torn API key (set via Tampermonkey menu) to resolve item names to IDs.
+            </div>
+            <div id="tm-imbuy-bazaar-status-line" style="color:#8bd;font-size:11px;min-height:1em;"></div>
+          </div>
+        </details>
+
       </div>
     `;
     return panel;
@@ -1306,6 +1806,45 @@
       });
     }
 
+    // ---- Bazaar Sniper controls ----
+    const bazaarEnabledEl = $("tm-imbuy-bazaar-enabled");
+    const bazaarPollEl    = $("tm-imbuy-bazaar-poll");
+    const bazaarStaleEl   = $("tm-imbuy-bazaar-stale");
+    const bazaarStatusEl  = $("tm-imbuy-bazaar-status-line");
+
+    const updateBazaarStatus = (msg) => { if (bazaarStatusEl) bazaarStatusEl.textContent = msg; };
+
+    if (bazaarPollEl)    bazaarPollEl.value  = String(settings.bazaarPollSeconds  || 60);
+    if (bazaarStaleEl)   bazaarStaleEl.value = String(settings.bazaarMaxStaleMins || 15);
+    if (bazaarEnabledEl) bazaarEnabledEl.checked = !!settings.bazaarSniperEnabled;
+
+    if (bazaarEnabledEl) {
+      bazaarEnabledEl.addEventListener("change", () => {
+        settings.bazaarSniperEnabled = !!bazaarEnabledEl.checked;
+        saveSettings(settings);
+        if (settings.bazaarSniperEnabled) {
+          startBazaarSnipe();
+          updateBazaarStatus("Sniper active — scanning on next poll cycle.");
+        } else {
+          stopBazaarSnipe();
+          updateBazaarStatus("Sniper disabled.");
+        }
+      });
+    }
+    if (bazaarPollEl) {
+      bazaarPollEl.addEventListener("change", () => {
+        settings.bazaarPollSeconds = Math.max(30, parseInt(bazaarPollEl.value || "60", 10));
+        saveSettings(settings);
+        if (settings.bazaarSniperEnabled) startBazaarSnipe(); // restart with new interval
+      });
+    }
+    if (bazaarStaleEl) {
+      bazaarStaleEl.addEventListener("change", () => {
+        settings.bazaarMaxStaleMins = Math.max(1, parseInt(bazaarStaleEl.value || "15", 10));
+        saveSettings(settings);
+      });
+    }
+
     setStatus(
       settings.enabled
         ? "Auto-buy on."
@@ -1314,7 +1853,7 @@
   }
 
   function injectUI() {
-    if (!isItemMarketPage()) return;
+    if (!isItemMarketPage() && !isBazaarPage()) return;
     if (document.getElementById(FAB_ID)) return;
 
     // Remove any old inline panel left over from a previous script version.
@@ -1410,43 +1949,66 @@
   // -------------------------------------------------------------------------
   // Startup
   // -------------------------------------------------------------------------
-  console.log(LOG, "starting. mobile=" + isMobile());
+  console.log(LOG, "starting. mobile=" + isMobile(), "bazaarPage=" + isBazaarPage());
 
-  try {
-    injectUI();
-  } catch (e) {
-    console.error(LOG, "injectUI failed", e);
-  }
-
-  // Re-inject on SPA re-renders (panel/FAB removed by React).
-  const uiObserver = new MutationObserver(() => {
-    if (!document.getElementById(FAB_ID)) injectUI();
-  });
-  uiObserver.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-  });
-
-  setInterval(() => {
-    if (!isItemMarketPage()) {
-      document.getElementById(FAB_ID)?.remove();
-      document.getElementById(MODAL_ID)?.remove();
-      document.getElementById(PANEL_ID)?.remove();
-      return;
-    }
-    // Remove any stray inline panel (old script version remnant).
-    const inlinePanel = document.getElementById(PANEL_ID);
-    if (inlinePanel && !inlinePanel.closest(`#${MODAL_ID}`)) inlinePanel.remove();
-    if (!document.getElementById(FAB_ID)) {
+  if (isBazaarPage()) {
+    // ---- Bazaar page: just run the auto-buy routine if we were redirected ----
+    // Wait for the DOM to settle before interacting.
+    const _bazaarBoot = async () => {
       try { injectUI(); } catch (e) {}
+      await wait(800);
+      try {
+        await runBazaarAutoBuy();
+      } catch (e) {
+        console.error(LOG, "runBazaarAutoBuy failed", e);
+      }
+    };
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => _bazaarBoot());
+    } else {
+      _bazaarBoot();
     }
-  }, 1000);
+  } else {
+    // ---- Item Market / imarket page: full UI + monitors ----
+    try {
+      injectUI();
+    } catch (e) {
+      console.error(LOG, "injectUI failed", e);
+    }
 
-  startMonitor();
-  flushPersistedCloudSave()
-    .then(() => initCloudSync())
-    .catch(e => console.warn(LOG, "cloud init error:", e));
-  startCloudPoll();
+    // Re-inject on SPA re-renders (panel/FAB removed by React).
+    const uiObserver = new MutationObserver(() => {
+      if (!document.getElementById(FAB_ID)) injectUI();
+    });
+    uiObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
+
+    setInterval(() => {
+      if (!isItemMarketPage()) {
+        document.getElementById(FAB_ID)?.remove();
+        document.getElementById(MODAL_ID)?.remove();
+        document.getElementById(PANEL_ID)?.remove();
+        return;
+      }
+      // Remove any stray inline panel (old script version remnant).
+      const inlinePanel = document.getElementById(PANEL_ID);
+      if (inlinePanel && !inlinePanel.closest(`#${MODAL_ID}`)) inlinePanel.remove();
+      if (!document.getElementById(FAB_ID)) {
+        try { injectUI(); } catch (e) {}
+      }
+    }, 1000);
+
+    startMonitor();
+    flushPersistedCloudSave()
+      .then(() => initCloudSync())
+      .catch(e => console.warn(LOG, "cloud init error:", e));
+    startCloudPoll();
+
+    // Start bazaar sniper if it was enabled in the last session.
+    if (settings.bazaarSniperEnabled) startBazaarSnipe();
+  }
 
   // Debug helpers for console testing.
   try {
@@ -1471,6 +2033,15 @@
       },
       startMonitor,
       stopMonitor,
+      startBazaarSnipe,
+      stopBazaarSnipe,
+      runBazaarSnipeScan,
+      runBazaarAutoBuy,
+      getItemIdByName,
+      fetchWeav3rMarketplace,
+      isBazaarVisited,
+      markBazaarVisited,
+      clearBazaarVisited,
     };
     console.log(LOG, "helpers available at window.tmItemMarketBuy");
   } catch (e) {}
