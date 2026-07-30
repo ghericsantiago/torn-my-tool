@@ -11,6 +11,9 @@
 // @match        https://www.torn.com/hospitalview.php*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
 // @require      https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js
 // @run-at       document-idle
 // ==/UserScript==
@@ -196,7 +199,6 @@
     }
     #pt-controls input:focus { border-color: #c9943a; }
     #pt-controls input::placeholder { color: #323656; }
-    #pt-key    { flex: 1; max-width: 220px; font-family: monospace; font-size: 11px; }
     #pt-from,
     #pt-to     { flex: 1; min-width: 100px; max-width: 145px; }
     #pt-search { flex: 1; min-width: 80px; }
@@ -473,7 +475,6 @@
       #pt-panel   { width: 100vw; }
       #pt-toggle.open { right: 100vw; }
       .pt-col-store, .pt-col-date { display: none !important; }
-      #pt-key    { max-width: none; }
       #pt-from, #pt-to { min-width: 0; }
       .pt-ctrl-row:nth-child(2) { gap: 4px; }
       .pt-tile-val { font-size: 14px; }
@@ -486,7 +487,7 @@
     localStorage.removeItem('tornItemCatalog');
     localStorage.removeItem('tornItemCatalog_v2');
 
-    const savedKey = localStorage.getItem('tornApiKey') || 'v6Yo75UQIYvWYrhT';
+    const savedKey = GM_getValue('tornApiKey', '');
     const now  = new Date();
     const week = new Date(+now - 7 * 86400_000);
 
@@ -506,13 +507,9 @@
 
       <div id="pt-controls">
         <div class="pt-ctrl-row">
-          <label>Key</label>
-          <input id="pt-key" type="password" placeholder="API key" value="${esc(savedKey)}" autocomplete="off">
-        </div>
-        <div class="pt-ctrl-row">
           <button class="pt-nav" id="pt-prev" title="Previous period">&#x2039;</button>
           <label>From</label>
-          <input id="pt-from" type="date" value="${isoDate(week)}">
+          <input id="pt-from" type="date" value="${isoDate(now)}">
           <label>To</label>
           <input id="pt-to" type="date" value="${isoDate(now)}">
           <button class="pt-nav" id="pt-next" title="Next period">&#x203A;</button>
@@ -540,7 +537,7 @@
           <div class="pt-tile-val" id="pt-s-sold">—</div>
         </div>
         <div class="pt-tile purple">
-          <div class="pt-tile-lbl">Potential Income</div>
+          <div class="pt-tile-lbl">Est. Profit</div>
           <div class="pt-tile-val" id="pt-s-income">—</div>
         </div>
       </div>
@@ -571,7 +568,7 @@
                 <th class="r">Avg</th>
                 <th class="r">Total</th>
                 <th class="r">Mkt Price</th>
-                <th class="r">Est. Income</th>
+                <th class="r">Est. Profit</th>
                 <th class="r">$/Unit</th>
                 <th class="r pt-col-date">Last</th>
               </tr>
@@ -593,10 +590,6 @@
     panel.querySelector('#pt-next')     .addEventListener('click', () => shiftDates(1));
     panel.querySelector('#pt-tax')      .addEventListener('input', rerender);
     panel.querySelector('#pt-chart-btn').addEventListener('click', onChartToggle);
-    panel.querySelector('#pt-key')      .addEventListener('change', () => {
-      const key = document.getElementById('pt-key').value.trim();
-      if (key) localStorage.setItem('tornApiKey', key);
-    });
 
     let searchTimer;
     panel.querySelector('#pt-search').addEventListener('input', () => {
@@ -662,14 +655,12 @@
 
   // ── Load data ─────────────────────────────────────────────────────────────
   async function loadData() {
-    const key  = document.getElementById('pt-key').value.trim();
+    const key  = GM_getValue('tornApiKey', '');
     const from = document.getElementById('pt-from').value;
     const to   = document.getElementById('pt-to').value;
 
-    if (!key)        { setStatus('Enter your API key.', 'err'); return; }
+    if (!key)        { setStatus('API key not set — use Tampermonkey menu to configure.', 'err'); return; }
     if (!from || !to){ setStatus('Select a date range.', 'err'); return; }
-
-    localStorage.setItem('tornApiKey', key);
 
     const btn = document.getElementById('pt-load');
     btn.disabled = true;
@@ -798,7 +789,7 @@
 
     tbody.innerHTML = data.map(item => {
       const income    = item.current_price > 0
-        ? Math.round(item.current_price * item.total_quantity * (1 - taxRate / 100))
+        ? Math.round(item.current_price * item.total_quantity * (1 - taxRate / 100) - item.total_amount)
         : null;
       const perUnit   = item.current_price > 0
         ? Math.round(item.current_price * (1 - taxRate / 100))
@@ -811,7 +802,7 @@
         <td class="${amtClass}">$${Math.round(item.avg_cost).toLocaleString()}</td>
         <td class="${amtClass}">$${item.total_amount.toLocaleString()}</td>
         <td class="gold">${item.current_price > 0 ? '$' + item.current_price.toLocaleString() : '<span style="color:#2e3452">—</span>'}</td>
-        <td class="${income !== null ? 'green' : ''}">
+        <td class="${income !== null ? (income >= 0 ? 'green' : 'red') : ''}">
           ${income !== null ? '$' + income.toLocaleString() : '<span style="color:#2e3452">—</span>'}
         </td>
         <td class="${perUnit !== null ? 'gold' : ''}">
@@ -827,7 +818,7 @@
     const buyTotal = filteredBuyData .reduce((s, i) => s + i.total_amount, 0);
     const sellTotal= filteredSellData.reduce((s, i) => s + i.total_amount, 0);
     const income   = filteredBuyData .reduce((s, i) =>
-      s + i.current_price * i.total_quantity * (1 - taxRate / 100), 0);
+      s + (i.current_price * i.total_quantity * (1 - taxRate / 100) - i.total_amount), 0);
 
     document.getElementById('pt-s-items') .textContent = filteredBuyData.length + filteredSellData.length;
     document.getElementById('pt-s-spent') .textContent = fmt$(buyTotal);
@@ -918,8 +909,8 @@
         case 3: av = a.avg_cost;         bv = b.avg_cost; break;
         case 4: av = a.total_amount;     bv = b.total_amount; break;
         case 5: av = a.current_price;    bv = b.current_price; break;
-        case 6: av = a.current_price * a.total_quantity * (1 - taxRate / 100);
-                bv = b.current_price * b.total_quantity * (1 - taxRate / 100); break;
+        case 6: av = a.current_price * a.total_quantity * (1 - taxRate / 100) - a.total_amount;
+                bv = b.current_price * b.total_quantity * (1 - taxRate / 100) - b.total_amount; break;
         case 7: av = a.current_price * (1 - taxRate / 100);
                 bv = b.current_price * (1 - taxRate / 100); break;
         case 8: av = a.last_transaction; bv = b.last_transaction; break;
@@ -946,7 +937,7 @@
     let csv = 'Type,Item,Store,Qty,Avg Price,Total,Market Price,Potential Income,Last\n';
     rows.forEach(i => {
       const inc = i.current_price > 0
-        ? Math.round(i.current_price * i.total_quantity * (1 - taxRate / 100)) : '';
+        ? Math.round(i.current_price * i.total_quantity * (1 - taxRate / 100) - i.total_amount) : '';
       csv += `"${i._type}","${i.item_name}","${i.store_type}",${i.total_quantity},${Math.round(i.avg_cost)},${i.total_amount},${i.current_price || ''},${inc},"${fmtDate(i.last_transaction)}"\n`;
     });
 
@@ -996,5 +987,13 @@
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────
+  GM_registerMenuCommand('Set API Key', () => {
+    const current = GM_getValue('tornApiKey', '');
+    const key = prompt('Enter your Torn API key:', current);
+    if (key === null) return; // cancelled
+    GM_setValue('tornApiKey', key.trim());
+    setStatus(key.trim() ? 'API key saved.' : 'API key cleared.', 'ok');
+  });
+
   buildUI();
 })();

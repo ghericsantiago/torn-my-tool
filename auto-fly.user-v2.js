@@ -10,6 +10,9 @@
 // @match        https://www.torn.com/gym.php
 // @match        https://www.torn.com/hospitalview.php*
 // @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -21,7 +24,7 @@
   const OPTS_KEY = "tmAutoFlyV2Options";
   const SHOPPING_LIST_KEY = "tmShoppingList"; // shared with v1
   const COOLDOWN_KEY = "tmAutoFlyLast";
-  const API_KEY = "v6Yo75UQIYvWYrhT";
+  const API_KEY = () => GM_getValue('tornApiKey', '');
 
   // =================== CLOUD SYNC ===================
   const KV_URL = "https://kv-get-started.ghericsantiago.workers.dev/torn-settings";
@@ -545,7 +548,7 @@
 
   // =================== API ===================
   async function apiRequest(section, selections) {
-    const res = await fetch(`https://api.torn.com/${section}/?selections=${selections}&key=${API_KEY}`);
+    const res = await fetch(`https://api.torn.com/${section}/?selections=${selections}&key=${API_KEY()}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (data.error) throw new Error(`[${data.error.code}] ${data.error.error}`);
@@ -2209,6 +2212,13 @@
     }
   });
   uiObserver.observe(document.documentElement, { childList: true, subtree: true });
+
+  GM_registerMenuCommand('Set API Key', () => {
+    const current = GM_getValue('tornApiKey', '');
+    const key = prompt('Enter your Torn API key:', current);
+    if (key === null) return;
+    GM_setValue('tornApiKey', key.trim());
+  });
 
   startAutoCheck();
   initHospitalWatch();

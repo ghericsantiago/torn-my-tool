@@ -6,6 +6,9 @@
 // @author       GitHub Copilot
 // @match        https://www.torn.com/properties.php*
 // @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -66,7 +69,7 @@
   }
 
   const STORAGE_KEY = "tornVaultAutoSettings";
-  const api = new TornAPI("v6Yo75UQIYvWYrhT");
+  const api = new TornAPI(GM_getValue('tornApiKey', ''));
 
   // =================== CLOUD SYNC ===================
   const KV_URL = "https://kv-get-started.ghericsantiago.workers.dev/torn-settings";
@@ -1064,7 +1067,14 @@
   };
 
   initWhenReady();
-  // expose simple debug helpers to the console for troubleshooting
+    GM_registerMenuCommand('Set API Key', () => {
+    const current = GM_getValue('tornApiKey', '');
+    const key = prompt('Enter your Torn API key:', current);
+    if (key === null) return;
+    GM_setValue('tornApiKey', key.trim());
+  });
+
+// expose simple debug helpers to the console for troubleshooting
   try {
     window.tmVaultDebug = {
       getAttackState: getAttackStateFromXPath,

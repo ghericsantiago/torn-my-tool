@@ -7,6 +7,9 @@
 // @match        https://www.torn.com/page.php*
 // @match        https://www.torn.com/imarket.php*
 // @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -32,7 +35,6 @@
     items: [], // watchlist: [{ name, maxPrice }]
     noBuySeconds: 20, // advance to next item after this long with no purchase
     enabled: false,
-    apiKey: "v6Yo75UQIYvWYrhT",
   };
 
   // Parse the multi-line items textarea into [{ name, maxPrice }].
@@ -74,7 +76,7 @@
         ].filter((i) => i.name);
       }
       if (!Array.isArray(merged.items)) merged.items = [];
-      if (!merged.apiKey) merged.apiKey = DEFAULTS.apiKey;
+      delete merged.apiKey;
       delete merged.itemName;
       delete merged.maxUnitPrice;
       return merged;
@@ -209,7 +211,7 @@
   function applyCloudSettings(cloud) {
     if (!cloud.itemmarket) return;
     const merged = Object.assign({}, DEFAULTS, cloud.itemmarket);
-    if (!merged.apiKey) merged.apiKey = DEFAULTS.apiKey;
+    delete merged.apiKey;
     try { localStorage.setItem(KEY, JSON.stringify(merged)); } catch(e) {}
     settings = merged;
     const panel = document.getElementById(PANEL_ID);
@@ -929,7 +931,8 @@
   // Torn API — item list + market prices
   // -------------------------------------------------------------------------
   async function fetchTornItems() {
-    if (!settings.apiKey) return;
+    const apiKey = GM_getValue('tornApiKey', '');
+    if (!apiKey) return;
     try {
       const cached = JSON.parse(localStorage.getItem(ITEMS_CACHE_KEY) || "{}");
       if (cached.ts && Date.now() - cached.ts < ITEMS_CACHE_TTL_MS && cached.data) {
@@ -939,7 +942,7 @@
     } catch (e) {}
     try {
       const res = await fetch(
-        `https://api.torn.com/torn/?selections=items&key=${settings.apiKey}&comment=tmItemMarketBuy`,
+        `https://api.torn.com/torn/?selections=items&key=${apiKey}&comment=tmItemMarketBuy`,
       );
       const json = await res.json();
       if (json.error) {
@@ -1471,5 +1474,12 @@
     };
     console.log(LOG, "helpers available at window.tmItemMarketBuy");
   } catch (e) {}
+
+  GM_registerMenuCommand('Set API Key', () => {
+    const current = GM_getValue('tornApiKey', '');
+    const key = prompt('Enter your Torn API key:', current);
+    if (key === null) return;
+    GM_setValue('tornApiKey', key.trim());
+  });
 })();
 
