@@ -63,7 +63,7 @@
 
   // =================== OPTIONS ===================
   function loadOptions() {
-    const DEFAULTS = { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5, gymEnabled: false, gymStat: "strength", holdIfNerveFull: false, autoRehabEnabled: false, minAddictionLevel: 1 };
+    const DEFAULTS = { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5, gymEnabled: false, gymStat: "strength", holdIfNerveFull: false, autoRehabEnabled: false, minAddictionLevel: 1, goItemMarket: false };
     try {
       const raw = JSON.parse(localStorage.getItem(OPTS_KEY) || "{}");
       const result = Object.assign({}, DEFAULTS);
@@ -292,6 +292,12 @@
       setChk("tm-af2-hold-nerve", options.holdIfNerveFull);
       setChk("tm-af2-rehab-enabled", options.autoRehabEnabled);
       setVal("tm-af2-min-addiction", options.minAddictionLevel ?? 1);
+      setChk("tm-af2-go-item-market", options.goItemMarket);
+      if (options.goItemMarket && !isControllerOnly() && !isAbroadOrTraveling()) {
+        options.goItemMarket = false;
+        saveOptions(options);
+        window.location.href = "https://www.torn.com/page.php?sid=ItemMarket";
+      }
       if (options.autoEnabled) startAutoCheck(); else stopAutoCheck();
     }
     if (cloud.autofly_plan && Array.isArray(cloud.autofly_plan)) {
@@ -1712,6 +1718,9 @@
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;margin-left:auto;color:#f0a500;" title="View and control settings from this device without running automation. Safe for phone use.">
             <input id="tm-af2-controller-only" type="checkbox"> Controller only
           </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;color:#44cc88;" title="Remote command: when checked on controller phone, the automation device navigates to the Item Market (only fires when at Torn home, not abroad)">
+            <input id="tm-af2-go-item-market" type="checkbox"> Go Item Market
+          </label>
         </div>
         <div id="tm-af2-controller-banner" style="display:none;flex:1 1 100%;background:#2a1f00;border:1px solid #f0a500;border-radius:4px;padding:5px 10px;font-size:11px;color:#f0a500;text-align:center;">
           Controller Only Mode — automation is paused on this device
@@ -1859,6 +1868,15 @@
         controllerOnlyEl.addEventListener("change", () => {
           localStorage.setItem(CONTROLLER_ONLY_KEY, String(controllerOnlyEl.checked));
           applyControllerOnly(controllerOnlyEl.checked);
+        });
+      }
+
+      const goItemMarketEl = document.getElementById("tm-af2-go-item-market");
+      if (goItemMarketEl) {
+        goItemMarketEl.checked = !!options.goItemMarket;
+        goItemMarketEl.addEventListener("change", () => {
+          options.goItemMarket = !!goItemMarketEl.checked;
+          saveOptions(options);
         });
       }
     }
@@ -2228,6 +2246,9 @@
     .then(() => initCloudSync())
     .catch(e => console.warn("[AutoFly2] cloud init error:", e));
   startCloudPoll();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") pollCloudSync();
+  }, { passive: true });
   if (isGymPage()) {
     options = loadOptions();
     if (options.gymEnabled) processGymTraining().catch(e => console.warn("[AutoFly2] gymTraining error", e));
