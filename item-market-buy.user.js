@@ -39,6 +39,7 @@
     bazaarSniperEnabled: false, // scan weav3r API and navigate to bazaar when price is right
     bazaarPollSeconds: 5,       // how often to scan (seconds)
     bazaarMaxStaleMins: 15,     // reject listings older than this (minutes)
+    redirectToHome: false,      // after bazaar auto-buy, go to home page instead of item market
   };
 
   // Parse the multi-line items textarea into [{ name, maxPrice }].
@@ -1115,7 +1116,9 @@
 
     const { itemId, itemName, maxPrice, lastChecked, returnUrl } = ctx;
     const goBack = () => {
-      window.location.href = returnUrl || "https://www.torn.com/page.php?sid=ItemMarket";
+      window.location.href = settings.redirectToHome
+        ? "https://www.torn.com/index.php"
+        : (returnUrl || "https://www.torn.com/page.php?sid=ItemMarket");
     };
 
     if (!settings.enabled) {
@@ -1698,6 +1701,9 @@
             <input id="tm-imbuy-cloud-poll" type="checkbox"> Cloud sync
           </label>
           <span id="tm-imbuy-cloud-next" style="font-size:10px;color:#555;font-variant-numeric:tabular-nums;"></span>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="After a bazaar auto-buy completes, redirect to the Torn home page instead of returning to the item market.">
+            <input id="tm-imbuy-redirect-home" type="checkbox"> Go home after buy
+          </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;margin-left:auto;color:#f0a500;" title="View and control settings from this device without running automation. Safe for phone use.">
             <input id="tm-imbuy-controller-only" type="checkbox"> Controller only
           </label>
@@ -1901,6 +1907,15 @@
       controllerOnlyEl.addEventListener("change", () => {
         localStorage.setItem(CONTROLLER_ONLY_KEY, String(controllerOnlyEl.checked));
         applyControllerOnly(controllerOnlyEl.checked);
+      });
+    }
+
+    const redirectHomeEl = $("tm-imbuy-redirect-home");
+    if (redirectHomeEl) {
+      redirectHomeEl.checked = !!settings.redirectToHome;
+      redirectHomeEl.addEventListener("change", () => {
+        settings.redirectToHome = !!redirectHomeEl.checked;
+        saveSettings(settings);
       });
     }
 
