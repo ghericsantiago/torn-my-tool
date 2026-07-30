@@ -592,6 +592,10 @@
     panel.querySelector('#pt-next')     .addEventListener('click', () => shiftDates(1));
     panel.querySelector('#pt-tax')      .addEventListener('input', rerender);
     panel.querySelector('#pt-chart-btn').addEventListener('click', onChartToggle);
+    panel.querySelector('#pt-key')      .addEventListener('change', () => {
+      const key = document.getElementById('pt-key').value.trim();
+      if (key) localStorage.setItem('tornApiKey', key);
+    });
 
     let searchTimer;
     panel.querySelector('#pt-search').addEventListener('input', () => {
