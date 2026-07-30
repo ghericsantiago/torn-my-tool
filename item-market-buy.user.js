@@ -496,7 +496,8 @@
   }
 
   function getSearchInput() {
-    return document.querySelector('input[class*="searchInput___"]');
+    return document.querySelector('[data-testid="autocomplete-input"]') ||
+           document.querySelector('input[class*="searchInput___"]');
   }
 
   function getSellerRows() {
@@ -557,24 +558,40 @@
 
     // Wait for autocomplete options to appear and click the matching one.
     const option = await waitForNode(() => {
-      const opts = Array.from(
-        document.querySelectorAll(
-          '[class*="autocomplete"] [role="option"], [class*="dropdown-content"] [role="option"], [class*="autocomplete"] li, [class*="dropdown-content"] li',
-        ),
+      const opts = Array.from(document.querySelectorAll(
+        // Torn's actual autocomplete: button.item inside [data-testid="dropdown-content"]
+        '[data-testid="dropdown-content"] button,' +
+        '[data-testid="dropdown-content"] .item,' +
+        '.dropdown-content button,' +
+        '.dropdown-content .item,' +
+        // torn-react-autocomplete library — non-hashed stable classes
+        '.suggestions li,' +
+        'li.suggestion,' +
+        '.autocomplete-wrapper li,' +
+        '.torn-react-autocomplete li,' +
+        // hashed / role-based fallbacks
+        '[class*="autocomplete"] [role="option"],' +
+        '[role="listbox"] [role="option"],' +
+        '[role="listbox"] li,' +
+        '[class*="autocomplete"] li'
+      )).filter(o => o.offsetParent !== null); // visible only
+
+      const lower = target.toLowerCase();
+      // 1. aria-label exact match — most reliable (contains clean name without item count)
+      const byLabel = opts.find(o =>
+        (o.getAttribute("aria-label") || "").toLowerCase() === lower
       );
-      return (
-        opts.find(
-          (o) =>
-            o.textContent &&
-            o.textContent.trim().toLowerCase() === target.toLowerCase(),
-        ) ||
-        opts.find(
-          (o) =>
-            o.textContent &&
-            o.textContent.trim().toLowerCase().includes(target.toLowerCase()),
-        ) ||
-        null
+      if (byLabel) return byLabel;
+      // 2. Exact text content match
+      const exact = opts.find(o => (o.textContent || "").trim().toLowerCase() === lower);
+      if (exact) return exact;
+      // 3. Text match after stripping trailing "(number)" — e.g. "Glow Stick (3135)"
+      const nameOnly = opts.find(o =>
+        (o.textContent || "").trim().replace(/\s*\(\d+\)\s*$/, "").toLowerCase() === lower
       );
+      if (nameOnly) return nameOnly;
+      // 4. Partial includes fallback
+      return opts.find(o => (o.textContent || "").trim().toLowerCase().includes(lower)) || null;
     }, 4000);
 
     if (option) {
@@ -1061,6 +1078,14 @@
     const goBack = () => {
       window.location.href = returnUrl || "https://www.torn.com/page.php?sid=ItemMarket";
     };
+
+    if (!settings.enabled) {
+      showBazaarToast("Auto-buy is disabled — going back…", "warn");
+      await wait(1500);
+      goBack();
+      return;
+    }
+
     showBazaarToast(`Auto-buy: locating "${itemName}" in this bazaar…`, "info");
 
     // Reject stale listings — they may already have been purchased.
@@ -1150,11 +1175,21 @@
     await wait(600);
 
     // Click the activate-buy-button on the card.
+    // On mobile bazaar the buy form is already inline — no activate button exists.
     const buyActivateBtn = card.querySelector('[data-testid="activate-buy-button"]');
-    if (!buyActivateBtn) { showBazaarToast("Buy button not found on item card", "error"); return; }
-    await simulateMouseMove(buyActivateBtn);
-    safeClick(buyActivateBtn);
-    await wait(700);
+    const buyFormAlreadyInline = !!(
+      card.querySelector('[data-testid="buy-button"]') ||
+      card.querySelector('[data-testid="buy-form"]')
+    );
+    if (!buyActivateBtn && !buyFormAlreadyInline) {
+      showBazaarToast("Buy button not found on item card", "error");
+      return;
+    }
+    if (buyActivateBtn) {
+      await simulateMouseMove(buyActivateBtn);
+      safeClick(buyActivateBtn);
+      await wait(700);
+    }
 
     // The bazaar reveals buy controls INLINE inside the item card — there is no
     // separate dialog.  After clicking activate-buy-button a quantity input and
@@ -1162,9 +1197,14 @@
     const rowContainer = card.closest('[data-testid="bazaar-items-row"]') || card.parentElement || card;
 
     const findQtyInput = () =>
-      card.querySelector('input[type="number"]')                         ||
-      card.querySelector('input.input-money:not([type="hidden"])')       ||
-      rowContainer.querySelector('input[type="number"]')                 ||
+      card.querySelector('[data-testid="number-input"]')                       ||
+      card.querySelector('input[type="number"]')                               ||
+      card.querySelector('input[type="text"][class*="numberInput"]')           ||
+      card.querySelector('input[type="text"][class*="buyAmountInput"]')        ||
+      card.querySelector('input.input-money:not([type="hidden"])')             ||
+      rowContainer.querySelector('[data-testid="number-input"]')               ||
+      rowContainer.querySelector('input[type="number"]')                       ||
+      rowContainer.querySelector('input[type="text"][class*="numberInput"]')   ||
       rowContainer.querySelector('input.input-money:not([type="hidden"])');
 
     // Buy button — must NOT match "fill max" (that only fills the qty input).
@@ -1228,6 +1268,7 @@
       // "fill max" may have used stock-only (ignoring cash), or may not exist.
       const qtyInput = findQtyInput();
       if (qtyInput) {
+        if (qtyInput.disabled) { qtyInput.disabled = false; qtyInput.removeAttribute("disabled"); }
         const current = Number(qtyInput.value) || 0;
         if (current !== qty) {
           setReactInputValue(qtyInput, qty);
@@ -1289,6 +1330,7 @@
   async function runBazaarSnipeScan() {
     if (_bazaarSnipeBusy)                   return;
     if (!settings.bazaarSniperEnabled)      return;
+    if (!settings.enabled)                  return; // master auto-buy toggle
     if (!isItemMarketPage())                return;
     if (busy)                               return; // item-market buy in progress
 
