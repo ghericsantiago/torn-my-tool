@@ -892,7 +892,7 @@
     if (!modal) {
       modal = document.createElement("div");
       modal.id = "tm-af2-log-modal";
-      modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999999;display:flex;align-items:center;justify-content:center;";
+      modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:2147483647;display:flex;align-items:center;justify-content:center;";
       const box = document.createElement("div");
       box.style.cssText = [
         "background:#1a1a1a","border:1px solid #444","border-radius:10px",

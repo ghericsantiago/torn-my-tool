@@ -1152,7 +1152,7 @@
 
     // Wait for the React bazaar grid to render.
     const grid = await waitForNode('[data-testid="bazaar-items"]', 18000);
-    if (!grid) { showBazaarToast("Bazaar grid did not load in time", "error"); return; }
+    if (!grid) { showBazaarToast("Bazaar grid did not load in time — going back", "error"); await wait(1200); history.back(); return; }
 
     // Filter the bazaar to the target item using the search input.
     const searchInput = document.querySelector('[data-testid="autocomplete-input"]');
@@ -1925,6 +1925,14 @@
       goHomeEl.addEventListener("change", () => {
         settings.goHome = !!goHomeEl.checked;
         saveSettings(settings);
+        // On the automation device, execute immediately — don't wait for the
+        // cloud poll cycle (which would skip because _lastCloudContent already
+        // reflects the save we just did).
+        if (settings.goHome && !isControllerOnly()) {
+          settings.goHome = false;
+          saveSettings(settings);
+          window.location.href = "https://www.torn.com/index.php";
+        }
       });
     }
 
