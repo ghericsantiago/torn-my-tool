@@ -792,6 +792,10 @@
     return true;
   }
 
+  function isItemDone(item) {
+    return (item.targetQty || 0) > 0 && (item.boughtQty || 0) >= item.targetQty;
+  }
+
   async function scanAndBuy() {
     if (isControllerOnly()) return;
     if (!settings.enabled) return;
@@ -808,9 +812,9 @@
       if (currentIndex >= list.length) currentIndex = 0;
       // Advance past any skipped items
       const _skipStart = currentIndex;
-      while (list[currentIndex]?.skipped) {
+      while (list[currentIndex]?.skipped || isItemDone(list[currentIndex])) {
         currentIndex = (currentIndex + 1) % list.length;
-        if (currentIndex === _skipStart) { setStatus("All items are skipped."); return; }
+        if (currentIndex === _skipStart) { setStatus("All items are skipped or done."); return; }
       }
       const cur = list[currentIndex];
       const tag = `[${currentIndex + 1}/${list.length}] ${cur.name}`;
@@ -852,20 +856,32 @@
         if (!settings.enabled) break; // user disabled mid-loop
         money = getMoneyOnHand(); // refresh after each purchase
         const affordable = Math.floor(money / entry.unitPrice);
-        const qty = Math.min(entry.available, affordable);
+        const remaining = (cur.targetQty || 0) > 0 ? Math.max(0, cur.targetQty - (cur.boughtQty || 0)) : Infinity;
+        if (remaining === 0) break; // target already met
+        const qty = Math.min(entry.available, affordable, isFinite(remaining) ? remaining : entry.available);
         if (qty < 1) break; // can't afford even one at this (cheapest remaining) price
         const ok = await buyFromRow(entry, qty);
         if (ok) {
           boughtUnits += qty;
           spent += qty * entry.unitPrice;
+          cur.boughtQty = (cur.boughtQty || 0) + qty;
           itemStartTs = Date.now(); // reset dwell timer — keep sniping this item
           setStatus(
-            `${tag}: bought ${formatNumber(boughtUnits)} @ up to $${formatNumber(cap)} (spent ~$${formatNumber(spent)}). Cash $${formatNumber(getMoneyOnHand())}.`,
+            `${tag}: bought ${formatNumber(boughtUnits)}${cur.targetQty > 0 ? ` (${cur.boughtQty}/${cur.targetQty} total)` : ""} @ up to $${formatNumber(cap)} (spent ~$${formatNumber(spent)}). Cash $${formatNumber(getMoneyOnHand())}.`,
           );
           await wait(700); // let React + money update settle
+          if (isItemDone(cur)) break; // target reached — stop buying this item
         } else {
           // Stop the sweep on failure to avoid hammering a broken row.
           break;
+        }
+      }
+      if (boughtUnits > 0) {
+        saveSettings(settings);
+        renderItemList();
+        if (isItemDone(cur)) {
+          console.log(LOG, `${tag}: target of ${cur.targetQty} reached — advancing to next item`);
+          advanceItem("target reached");
         }
       }
 
@@ -888,8 +904,8 @@
     const startIdx = currentIndex;
     do {
       currentIndex = (currentIndex + 1) % list.length;
-    } while (list[currentIndex]?.skipped && currentIndex !== startIdx);
-    if (list[currentIndex]?.skipped) return; // all items skipped
+    } while ((list[currentIndex]?.skipped || isItemDone(list[currentIndex])) && currentIndex !== startIdx);
+    if (list[currentIndex]?.skipped || isItemDone(list[currentIndex])) return; // all items skipped/done
     itemStartTs = Date.now();
     lastSearchedItem = null; // force a fresh search for the new item
     const cur = list[currentIndex];
@@ -1637,17 +1653,29 @@
     const delS = "padding:1px 5px;background:#220000;border:1px solid #622;color:#f66;border-radius:3px;cursor:pointer;font-size:11px;";
     const skipS = "padding:1px 5px;background:#1a1a0a;border:1px solid #554400;color:#aa8;border-radius:3px;cursor:pointer;font-size:11px;";
     const unskipS = "padding:1px 5px;background:#0a1a0a;border:1px solid #2a6a2a;color:#6f6;border-radius:3px;cursor:pointer;font-size:11px;";
+    const resetS = "padding:1px 4px;background:#0a1a2a;border:1px solid #2a4a6a;color:#6af;border-radius:3px;cursor:pointer;font-size:10px;";
     container.innerHTML = "";
     list.forEach((item, i) => {
+      const done = isItemDone(item);
       const row = document.createElement("div");
-      row.style.cssText = `display:flex;align-items:center;gap:4px;padding:4px 0;border-bottom:1px solid #2a2a2a;${item.skipped ? "opacity:0.45;" : ""}`;
+      row.style.cssText = `display:flex;align-items:center;gap:4px;padding:4px 0;border-bottom:1px solid #2a2a2a;${(item.skipped || done) ? "opacity:0.45;" : ""}`;
       const priceHtml = item.maxPrice
         ? `<span style="color:#f0a500;font-size:11px;white-space:nowrap;">&#8804; $${formatNumber(parseAmount(item.maxPrice))}</span>`
         : `<span style="color:#555;font-size:11px;">no max</span>`;
+      const targetQty = item.targetQty || 0;
+      const boughtQty = item.boughtQty || 0;
+      const progressHtml = targetQty > 0
+        ? `<span style="font-size:10px;color:${done ? "#44cc88" : "#888"};white-space:nowrap;" title="${boughtQty} bought of ${targetQty} target">${boughtQty}/${targetQty}</span>`
+        : "";
+      const resetBtnHtml = targetQty > 0
+        ? `<button data-action="reset" data-idx="${i}" style="${resetS}" title="Reset bought counter (${boughtQty} → 0)">&#8635;</button>`
+        : "";
       row.innerHTML = [
         `<span style="color:#555;font-size:10px;min-width:16px;text-align:right;">${i + 1}.</span>`,
-        `<span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${item.skipped ? "text-decoration:line-through;color:#555;" : ""}">${escHtml(item.name)}</span>`,
+        `<span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${(item.skipped || done) ? "text-decoration:line-through;color:#555;" : ""}">${escHtml(item.name)}</span>`,
         priceHtml,
+        progressHtml,
+        resetBtnHtml,
         `<button data-action="skip" data-idx="${i}" style="${item.skipped ? unskipS : skipS}" title="${item.skipped ? "Enable item" : "Skip item"}">${item.skipped ? "&#9654;" : "&#9646;&#9646;"}</button>`,
         `<button data-action="edit" data-idx="${i}" style="${editS}">&#9998;</button>`,
         `<button data-action="up" data-idx="${i}" style="${btnS}"${i === 0 ? " disabled" : ""}>&#8593;</button>`,
@@ -1690,9 +1718,12 @@
             </div>
             <input id="tm-imbuy-new-price" type="text" placeholder="Max price (auto-fills from market)"
               style="flex:1;min-width:90px;padding:4px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;">
+            <input id="tm-imbuy-new-targetqty" type="number" min="0" placeholder="Target qty"
+              title="Stop buying this item after this many are purchased (0 = unlimited)"
+              style="width:72px;padding:4px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;">
             <button id="tm-imbuy-add-item" style="padding:4px 10px;border-radius:4px;border:1px solid #555;background:#333;color:#eee;cursor:pointer;font-size:12px;white-space:nowrap;">+ Add</button>
           </div>
-          <div style="color:#555;font-size:10px;margin-top:4px;">Top item is bought first. &#8804; = max price cap. Blank price uses market value.</div>
+          <div style="color:#555;font-size:10px;margin-top:4px;">Top item is bought first. &#8804; = max price cap. Blank price uses market value. Target qty = 0 means unlimited.</div>
         </details>
 
         <!-- Options row -->
@@ -1785,7 +1816,14 @@
         const saveS = "padding:1px 5px;background:#1a3a1a;border:1px solid #2a6a2a;color:#6f6;border-radius:3px;cursor:pointer;font-size:11px;";
         const cancelS = "padding:1px 5px;background:#220000;border:1px solid #622;color:#f66;border-radius:3px;cursor:pointer;font-size:11px;";
 
-        if (action === "edit") {
+        if (action === "reset") {
+          if (settings.items[idx]) {
+            settings.items[idx].boughtQty = 0;
+            saveSettings(settings);
+            renderItemList();
+          }
+          return;
+        } else if (action === "edit") {
           const item = settings.items[idx];
           if (!item) return;
           const row = btn.closest("div");
@@ -1793,6 +1831,7 @@
             `<span style="color:#555;font-size:10px;min-width:16px;text-align:right;">${idx + 1}.</span>`,
             `<input type="text" data-edit-name="${idx}" value="${escHtml(item.name)}" style="flex:2;${inpS}">`,
             `<input type="text" data-edit-price="${idx}" value="${escHtml(item.maxPrice || "")}" placeholder="Max price" style="flex:1;${inpS}">`,
+            `<input type="number" data-edit-targetqty="${idx}" value="${item.targetQty || 0}" min="0" placeholder="Target qty" title="Target quantity (0 = unlimited)" style="width:60px;${inpS}">`,
             `<button data-action="save" data-idx="${idx}" style="${saveS}">&#10003;</button>`,
             `<button data-action="cancel" data-idx="${idx}" style="${cancelS}">&#10007;</button>`,
           ].join("");
@@ -1806,9 +1845,11 @@
           const row = btn.closest("div");
           const name = (row.querySelector("input[data-edit-name]")?.value || "").trim();
           const price = (row.querySelector("input[data-edit-price]")?.value || "").trim();
+          const targetQty = Math.max(0, parseInt(row.querySelector("input[data-edit-targetqty]")?.value || "0", 10) || 0);
           if (name && settings.items[idx]) {
             settings.items[idx].name = name;
             settings.items[idx].maxPrice = price;
+            settings.items[idx].targetQty = targetQty;
             lastSearchedItem = null;
             saveSettings(settings);
           }
@@ -1846,8 +1887,9 @@
           const mv = getMarketValue(name);
           if (mv > 0) price = String(mv);
         }
+        const targetQty = Math.max(0, parseInt($("tm-imbuy-new-targetqty")?.value || "0", 10) || 0);
         if (!settings.items.some(i => i.name.toLowerCase() === name.toLowerCase())) {
-          settings.items.push({ name, maxPrice: price });
+          settings.items.push({ name, maxPrice: price, targetQty, boughtQty: 0 });
           saveSettings(settings);
           renderItemList();
           const toggle = $("tm-imbuy-items-toggle");
@@ -1855,8 +1897,10 @@
         }
         const nameEl = $("tm-imbuy-new-name");
         const priceEl = $("tm-imbuy-new-price");
+        const qtyEl = $("tm-imbuy-new-targetqty");
         if (nameEl) nameEl.value = "";
         if (priceEl) priceEl.value = "";
+        if (qtyEl) qtyEl.value = "";
       };
       addBtn.addEventListener("click", doAdd);
       $("tm-imbuy-new-name")?.addEventListener("keydown", e => {
