@@ -311,6 +311,8 @@
   let maintainSchedule = null;
   let attackRecoveryTimer = null;
   let lastAttackDepositTime = 0;
+  let lastVaultActionTime = 0;
+  const VAULT_ACTION_COOLDOWN_MS = 8000;
   let lastAttackState = false;
   let postAttackRecoveryUntil = 0;
   let postAttackCountdownInterval = null;
@@ -686,7 +688,7 @@
     const { cash } = getVaultValues();
     if (cash > 0) {
       console.log("[Vault Script] Depositing all cash on attack:", cash);
-      submitVaultForm("deposit", cash);
+      submitVaultForm("deposit", cash, { skipCooldown: true });
     } else {
       console.log("[Vault Script] No cash to deposit on attack");
     }
@@ -717,12 +719,14 @@
     return true;
   };
 
-  const submitVaultForm = (type, amount) => {
+  const submitVaultForm = (type, amount, { skipCooldown = false } = {}) => {
     const filled = fillVaultForm(type, amount);
     if (!filled) return false;
 
     const form = getVaultForm(type);
     if (!form) return false;
+
+    if (!skipCooldown) lastVaultActionTime = Date.now();
 
     const submitBtn = form.querySelector('input[type="submit"]');
     if (submitBtn) {
@@ -741,6 +745,11 @@
       console.log(
         "[Vault Script] In post-attack recovery period, skipping maintenance",
       );
+      return;
+    }
+    const msSinceLastAction = Date.now() - lastVaultActionTime;
+    if (msSinceLastAction < VAULT_ACTION_COOLDOWN_MS) {
+      console.log(`[Vault Script] Vault action cooldown active — ${Math.ceil((VAULT_ACTION_COOLDOWN_MS - msSinceLastAction) / 1000)}s remaining, skipping`);
       return;
     }
     const target = parseAmount(CONFIG.targetCashOnHand);
