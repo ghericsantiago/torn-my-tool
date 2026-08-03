@@ -247,9 +247,11 @@
     const targetInput     = document.getElementById("tm-target-cash");
     const autoMaintainInp = document.getElementById("tm-auto-maintain");
     const autoAttackInp   = document.getElementById("tm-auto-attack-deposit");
+    const thresholdInp    = document.getElementById("tm-threshold-pct");
     if (targetInput)     targetInput.value        = formatNumber(parseAmount(CONFIG.targetCashOnHand));
     if (autoMaintainInp) autoMaintainInp.checked  = !!CONFIG.autoMaintainEnabled;
     if (autoAttackInp)   autoAttackInp.checked    = !!CONFIG.autoAttackDepositEnabled;
+    if (thresholdInp)    thresholdInp.value        = parseFloat(CONFIG.triggerThresholdPercent) || 0;
     try { updateMaintainInfo(getVaultValues()); } catch(e) {}
   }
 
@@ -294,6 +296,7 @@
 
   const CONFIG = loadSettings({
     targetCashOnHand: "500000",
+    triggerThresholdPercent: 0,
     autoMaintainEnabled: false,
     autoAttackDepositEnabled: true,
     attackRecoveryDelaySeconds: 10,
@@ -626,6 +629,12 @@
     const delta = cash - target;
     const deltaColor = delta > 0 ? "#ff9966" : delta < 0 ? "#66aaff" : "#44cc88";
     const deltaStr = delta === 0 ? "on target" : (delta > 0 ? "+" : "") + "$" + formatNumber(Math.abs(delta)) + (delta > 0 ? " to deposit" : " to withdraw");
+    const thresholdPct = parseFloat(CONFIG.triggerThresholdPercent) || 0;
+    const pctDiff = target > 0 ? (Math.abs(delta) / target) * 100 : 0;
+    const withinThreshold = thresholdPct > 0 && delta !== 0 && pctDiff < thresholdPct;
+    const thresholdBadge = thresholdPct > 0
+      ? `<span style="color:#555;margin:0 4px;">|</span><span style="font-size:11px;color:${withinThreshold ? "#888" : "#f0a500"};" title="Current deviation: ${pctDiff.toFixed(1)}% | Threshold: ${thresholdPct}%">${withinThreshold ? `within ${thresholdPct}%` : `${pctDiff.toFixed(1)}% ≥ ${thresholdPct}%`}</span>`
+      : "";
     info.innerHTML = [
       `<span style="color:#aaa;">Cash:</span> <span style="color:#44cc88;font-weight:bold;">$${formatNumber(cash)}</span>`,
       `<span style="color:#555;margin:0 4px;">|</span>`,
@@ -634,6 +643,7 @@
       `<span style="color:#aaa;">Target:</span> <span style="color:#f0a500;font-weight:bold;">$${formatNumber(target)}</span>`,
       `<span style="color:#555;margin:0 4px;">|</span>`,
       `<span style="color:${deltaColor};font-size:11px;">${deltaStr}</span>`,
+      thresholdBadge,
     ].join("");
   };
 
@@ -755,6 +765,15 @@
       return;
     }
 
+    const thresholdPct = parseFloat(CONFIG.triggerThresholdPercent) || 0;
+    if (thresholdPct > 0 && target > 0) {
+      const pctDiff = (Math.abs(delta) / target) * 100;
+      if (pctDiff < thresholdPct) {
+        console.log(`[Vault Script] Delta ${pctDiff.toFixed(2)}% is within ${thresholdPct}% threshold — skipping`);
+        return;
+      }
+    }
+
     const required = Math.abs(delta);
     if (delta > 0) {
       submitVaultForm("deposit", required);
@@ -800,6 +819,12 @@
             Target:
             <input id="tm-target-cash" type="text" value="${formatNumber(parseAmount(CONFIG.targetCashOnHand))}"
               style="width:100px;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;">
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Only deposit/withdraw when cash deviates from target by at least this percentage. Set to 0 to always act.">
+            Threshold:
+            <input id="tm-threshold-pct" type="number" min="0" max="100" step="0.5" value="${parseFloat(CONFIG.triggerThresholdPercent) || 0}"
+              style="width:58px;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;">
+            <span style="font-size:11px;color:#888;">%</span>
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Automatically deposit or withdraw to maintain the target amount">
             <input id="tm-auto-maintain" type="checkbox"${CONFIG.autoMaintainEnabled ? " checked" : ""}> Auto-maintain
@@ -859,6 +884,14 @@
     autoAttackDepositInput?.addEventListener("change", () => {
       CONFIG.autoAttackDepositEnabled = autoAttackDepositInput.checked;
       saveSettings();
+    });
+    const thresholdInput = document.getElementById("tm-threshold-pct");
+    thresholdInput?.addEventListener("change", () => {
+      CONFIG.triggerThresholdPercent = Math.max(0, parseFloat(thresholdInput.value) || 0);
+      thresholdInput.value = CONFIG.triggerThresholdPercent;
+      saveSettings();
+      console.log("[Vault Script] Trigger threshold set to", CONFIG.triggerThresholdPercent, "%");
+      try { updateMaintainInfo(getVaultValues()); } catch(e) {}
     });
     const cloudPollEl = document.getElementById("tm-vault-cloud-poll");
     if (cloudPollEl) {
