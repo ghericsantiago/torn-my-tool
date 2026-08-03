@@ -1375,6 +1375,15 @@
       3000
     );
     if (success) {
+      // Credit the purchase toward the watchlist item's target quantity.
+      const watchItem = settings.items.find(i => i.name.toLowerCase() === itemName.toLowerCase());
+      if (watchItem) {
+        watchItem.boughtQty = (watchItem.boughtQty || 0) + qty;
+        saveSettings(settings);
+        if (isItemDone(watchItem)) {
+          console.log(LOG, `[Bazaar] "${itemName}" reached target of ${watchItem.targetQty} — will be skipped on return`);
+        }
+      }
       showBazaarToast(`Bought ${formatNumber(qty)}x ${itemName} @ $${formatNumber(actualPrice)} — going back…`, "success");
       const closeBtn = document.querySelector(
         'button[aria-label="Close panel"], button[class*="closeButton___"]'
@@ -1417,12 +1426,12 @@
       // rather than cycling through all watchlist items.
       const currentName    = getSelectedItemTitle();
       const currentWatchItem = currentName
-        ? list.find(i => !i.skipped && i.name.toLowerCase() === currentName.toLowerCase())
+        ? list.find(i => !i.skipped && !isItemDone(i) && i.name.toLowerCase() === currentName.toLowerCase())
         : null;
       const itemsToScan = currentWatchItem ? [currentWatchItem] : list;
 
       for (const item of itemsToScan) {
-        if (item.skipped) continue;
+        if (item.skipped || isItemDone(item)) continue;
         const cap = parseAmount(item.maxPrice);
         if (cap <= 0) continue;
 
