@@ -2199,6 +2199,16 @@
       }
     }, 1000);
 
+    // Restore currentIndex to the sniped item before starting the monitor so
+    // scanAndBuy doesn't reset to item 1 on return from bazaar.
+    const _returnItem = sessionStorage.getItem(SNIPE_RETURN_KEY);
+    if (_returnItem) {
+      const _retIdx = (settings.items || []).findIndex(
+        i => i.name.toLowerCase() === _returnItem.toLowerCase()
+      );
+      if (_retIdx >= 0) currentIndex = _retIdx;
+    }
+
     startMonitor();
     flushPersistedCloudSave()
       .then(() => initCloudSync())
