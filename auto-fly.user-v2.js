@@ -1136,21 +1136,21 @@
     if (!statLi) {
       setPanelStatus(`Auto-gym: ${stat} not found`, "#f66");
       console.warn(`[AutoFly2] Gym: no li for ${stat}`);
-      return;
+      await wait(1000); location.href = "/page.php?sid=travel"; return;
     }
 
     // Check if locked at this gym
     if (statLi.className.includes("locked")) {
       setPanelStatus(`Auto-gym: ${stat} unavailable at this gym`, "#f66");
       console.warn(`[AutoFly2] Gym: ${stat} is locked`);
-      return;
+      await wait(1000); location.href = "/page.php?sid=travel"; return;
     }
 
     // Find enabled train button
     const trainBtn = statLi.querySelector(`button[aria-label="Train ${stat}"]:not([disabled])`);
     if (!trainBtn) {
       setPanelStatus(`Auto-gym: ${stat} train button unavailable`, "#f66");
-      return;
+      await wait(1000); location.href = "/page.php?sid=travel"; return;
     }
 
     // Parse energy cost per train from description text ("25 energy per train")
@@ -1168,8 +1168,9 @@
 
     const maxTrains = Math.floor(currentEnergy / costPerTrain);
     if (maxTrains <= 0) {
-      setPanelStatus("Auto-gym: not enough energy", "#666");
-      return;
+      setPanelStatus("Auto-gym: not enough energy — going to travel…", "#666");
+      console.log("[AutoFly2] Gym: not enough energy — navigating to travel");
+      await wait(1000); location.href = "/page.php?sid=travel"; return;
     }
 
     // Set the training count input
