@@ -1216,13 +1216,17 @@
       return;
     }
 
-    // Determine how many we can afford.
+    // Determine how many we can afford, capped by remaining target quantity.
     const stockEl  = card.querySelector('[data-testid="amount-value"]');
     const stockTxt = stockEl?.textContent?.trim();
     // Use parsed stock if the element exists; fall back to 9999 only when it's absent (not when it shows "0").
     const stock    = stockTxt != null ? Math.max(0, parseInt(stockTxt, 10) || 0) : 9999;
     const money   = getMoneyOnHand();
-    const qty     = Math.min(stock, Math.floor(money / actualPrice));
+    const watchItemForQty = settings.items.find(i => i.name.toLowerCase() === itemName.toLowerCase());
+    const _remaining = watchItemForQty && (watchItemForQty.targetQty || 0) > 0
+      ? Math.max(0, watchItemForQty.targetQty - (watchItemForQty.boughtQty || 0))
+      : Infinity;
+    const qty     = Math.min(stock, Math.floor(money / actualPrice), isFinite(_remaining) ? _remaining : stock);
 
     if (qty < 1) {
       showBazaarToast(
@@ -1374,16 +1378,19 @@
       () => document.querySelector('[class*="successText___"]'),
       3000
     );
-    if (success) {
-      // Credit the purchase toward the watchlist item's target quantity.
-      const watchItem = settings.items.find(i => i.name.toLowerCase() === itemName.toLowerCase());
-      if (watchItem) {
-        watchItem.boughtQty = (watchItem.boughtQty || 0) + qty;
-        saveSettings(settings);
-        if (isItemDone(watchItem)) {
-          console.log(LOG, `[Bazaar] "${itemName}" reached target of ${watchItem.targetQty} — will be skipped on return`);
-        }
+    // Credit the purchase toward the watchlist item's target quantity.
+    // Done here (before the success check) because the bazaar page doesn't always
+    // show the successText element — the buy was submitted regardless.
+    const watchItem = settings.items.find(i => i.name.toLowerCase() === itemName.toLowerCase());
+    if (watchItem) {
+      watchItem.boughtQty = (watchItem.boughtQty || 0) + qty;
+      saveSettings(settings);
+      if (isItemDone(watchItem)) {
+        console.log(LOG, `[Bazaar] "${itemName}" reached target of ${watchItem.targetQty} — will be skipped on return`);
       }
+    }
+
+    if (success) {
       showBazaarToast(`Bought ${formatNumber(qty)}x ${itemName} @ $${formatNumber(actualPrice)} — going back…`, "success");
       const closeBtn = document.querySelector(
         'button[aria-label="Close panel"], button[class*="closeButton___"]'
