@@ -2238,17 +2238,19 @@
       }
     }, 1000);
 
-    // Restore currentIndex to the sniped item before starting the monitor so
-    // scanAndBuy doesn't reset to item 1 on return from bazaar.
+    // Restore currentIndex to the sniped item after returning from bazaar.
+    // Must be applied AFTER startMonitor() because startMonitor resets currentIndex to 0.
     const _returnItem = sessionStorage.getItem(SNIPE_RETURN_KEY);
+    let _returnIdx = -1;
     if (_returnItem) {
-      const _retIdx = (settings.items || []).findIndex(
+      _returnIdx = (settings.items || []).findIndex(
         i => i.name.toLowerCase() === _returnItem.toLowerCase()
       );
-      if (_retIdx >= 0) currentIndex = _retIdx;
     }
 
     startMonitor();
+
+    if (_returnIdx >= 0) currentIndex = _returnIdx;
     flushPersistedCloudSave()
       .then(() => initCloudSync())
       .catch(e => console.warn(LOG, "cloud init error:", e));
