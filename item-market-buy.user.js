@@ -1012,9 +1012,25 @@
   // then auto-buys the maximum affordable quantity on the bazaar page.
   // =========================================================================
 
-  const BAZAAR_CTX_KEY  = "tmBazaarAutoBuyCtx";
+  const BAZAAR_CTX_KEY   = "tmBazaarAutoBuyCtx";
   const SNIPE_RETURN_KEY = "tmSnipeReturn"; // item name to re-select after returning from bazaar
-  const WEAV3R_API      = "https://weav3r.dev/api/";
+  const BAZAAR_QUEUE_KEY = "tmBazaarQueue"; // sessionStorage queue of pending bazaar visits
+  const WEAV3R_API       = "https://weav3r.dev/api/";
+
+  // ---- Bazaar visit queue — all listings collected in one weav3r poll,
+  //      drained one bazaar at a time before the next poll fires. ----
+  function loadBazaarQueue() {
+    try { return JSON.parse(sessionStorage.getItem(BAZAAR_QUEUE_KEY) || "[]"); }
+    catch (e) { return []; }
+  }
+  function saveBazaarQueue(q) {
+    try { sessionStorage.setItem(BAZAAR_QUEUE_KEY, JSON.stringify(q)); }
+    catch (e) {}
+  }
+  function clearBazaarQueue() {
+    try { sessionStorage.removeItem(BAZAAR_QUEUE_KEY); }
+    catch (e) {}
+  }
 
   function isBazaarPage() {
     return /bazaar\.php/i.test(location.pathname);
@@ -1419,94 +1435,117 @@
 
     _bazaarSnipeBusy = true;
     try {
-      // Cache the item ID for whatever is currently displayed in the item market.
-      // This builds up the DOM-based fallback so the sniper works without a Torn API key.
       _cacheCurrentDomItem();
-
-      // Ensure the item cache is loaded so we can look up item IDs.
       if (!tornItems) await fetchTornItems();
 
       const list = settings.items || [];
+      let queue = loadBazaarQueue();
 
-      // Focus on the currently displayed item if it's in the watchlist.
-      // This makes the sniper continuously buy the item the user is viewing
-      // rather than cycling through all watchlist items.
-      const currentName    = getSelectedItemTitle();
-      const currentWatchItem = currentName
-        ? list.find(i => !i.skipped && !isItemDone(i) && i.name.toLowerCase() === currentName.toLowerCase())
-        : null;
-      const itemsToScan = currentWatchItem ? [currentWatchItem] : list;
-
-      for (const item of itemsToScan) {
-        if (item.skipped || isItemDone(item)) continue;
-        const cap = parseAmount(item.maxPrice);
-        if (cap <= 0) continue;
-
-        const itemId = getItemIdByName(item.name);
-        if (!itemId) {
-          console.log(LOG, `[Bazaar] No item ID for "${item.name}" — navigate to it in the item market to auto-detect its ID, or set a Torn API key`);
-          continue;
-        }
-
-        setStatus(`[Bazaar] Checking ${item.name} via weav3r API…`);
-        const data = await fetchWeav3rMarketplace(itemId, cap);
-        if (!data?.listings?.length) continue;
+      // Only poll weav3r when the queue is empty — collect ALL qualifying listings
+      // in one shot so every bazaar within budget is visited before the next poll.
+      if (!queue.length) {
+        const currentName      = getSelectedItemTitle();
+        const currentWatchItem = currentName
+          ? list.find(i => !i.skipped && !isItemDone(i) && i.name.toLowerCase() === currentName.toLowerCase())
+          : null;
+        const itemsToScan = currentWatchItem ? [currentWatchItem] : list;
 
         const now         = Math.floor(Date.now() / 1000);
         const maxStaleSec = Math.max(5, settings.bazaarMaxStaleMins || 15) * 60;
 
-        // Keep only listings that are fresh, within budget, and not already visited
-        // with the same last_checked timestamp (i.e. not restocked since our visit).
-        const valid = data.listings
-          .filter(l => l.price <= cap && (now - (l.last_checked || 0)) < maxStaleSec)
-          .filter(l => !isBazaarVisited(l.player_id, itemId, l.last_checked || 0))
-          .sort((a, b) => a.price - b.price);
+        for (const item of itemsToScan) {
+          if (item.skipped || isItemDone(item)) continue;
+          const cap = parseAmount(item.maxPrice);
+          if (cap <= 0) continue;
 
-        if (!valid.length) continue;
+          const itemId = getItemIdByName(item.name);
+          if (!itemId) {
+            console.log(LOG, `[Bazaar] No item ID for "${item.name}" — navigate to it in the item market to auto-detect its ID, or set a Torn API key`);
+            continue;
+          }
 
-        const listing = valid[0];
-        const money   = getMoneyOnHand();
-        if (money < listing.price) continue; // can't afford even one
+          setStatus(`[Bazaar] Checking ${item.name} via weav3r API…`);
+          const data = await fetchWeav3rMarketplace(itemId, cap);
+          if (!data?.listings?.length) continue;
 
-        const ageSecs = now - (listing.last_checked || 0);
-        console.log(
-          LOG,
-          `[Bazaar] Found "${item.name}" @ $${formatNumber(listing.price)} from player ${listing.player_id}`,
-          `(updated ${Math.round(ageSecs / 60)}m ago)`
-        );
+          const valid = data.listings
+            .filter(l => l.price <= cap && (now - (l.last_checked || 0)) < maxStaleSec)
+            .filter(l => !isBazaarVisited(l.player_id, itemId, l.last_checked || 0))
+            .sort((a, b) => a.price - b.price);
 
-        // Record this visit so we don't return to the same listing again until
-        // the seller updates their bazaar (new last_checked timestamp).
-        markBazaarVisited(listing.player_id, itemId, listing.last_checked || 0);
+          for (const listing of valid) {
+            queue.push({
+              itemId:      String(itemId),
+              itemName:    item.name,
+              maxPrice:    cap,
+              lastChecked: listing.last_checked || 0,
+              listing,
+            });
+            // Mark visited now so a concurrent re-poll can't re-add this listing.
+            markBazaarVisited(listing.player_id, itemId, listing.last_checked || 0);
+          }
+        }
 
-        // Remember which item we're sniping so we can re-select it when we return.
-        sessionStorage.setItem(SNIPE_RETURN_KEY, item.name);
+        if (!queue.length) {
+          setStatus("[Bazaar] Scan done — no qualifying listings right now.");
+          return;
+        }
 
-        // Store context for the bazaar page to pick up after navigation.
-        sessionStorage.setItem(BAZAAR_CTX_KEY, JSON.stringify({
-          itemId:      String(itemId),
-          itemName:    item.name,
-          maxPrice:    cap,
-          lastChecked: listing.last_checked || 0,
-          money,
-          listing,
-          returnUrl:   location.href,
-        }));
-
-        const bazaarUrl =
-          `https://www.torn.com/bazaar.php` +
-          `?userId=${listing.player_id}` +
-          `&itemId=${itemId}` +
-          `&v=${listing.last_checked || 0}` +
-          `&tm-autobuy=1#/`;
-
-        setStatus(`[Bazaar] Navigating → ${item.name} @ $${formatNumber(listing.price)} …`);
-        await wait(400);
-        window.location.href = bazaarUrl;
-        return; // navigation is in flight; don't start another scan
+        console.log(LOG, `[Bazaar] Queue built: ${queue.length} listing(s) to visit.`);
       }
 
-      setStatus("[Bazaar] Scan done — no qualifying listings right now.");
+      // Drain entries from the front that are no longer valid to visit.
+      const now         = Math.floor(Date.now() / 1000);
+      const maxStaleSec = Math.max(5, settings.bazaarMaxStaleMins || 15) * 60;
+      while (queue.length) {
+        const peek      = queue[0];
+        const watchItem = list.find(i => i.name.toLowerCase() === peek.itemName.toLowerCase());
+        const isStale   = peek.lastChecked > 0 && (now - peek.lastChecked) > maxStaleSec;
+        if (!watchItem || watchItem.skipped || isItemDone(watchItem) || isStale || getMoneyOnHand() < peek.listing.price) {
+          queue.shift();
+          continue;
+        }
+        break;
+      }
+
+      if (!queue.length) {
+        clearBazaarQueue();
+        setStatus("[Bazaar] Queue exhausted — all listings visited or skipped.");
+        return;
+      }
+
+      const next  = queue.shift();
+      saveBazaarQueue(queue); // persist remaining entries for after we return
+
+      const money = getMoneyOnHand();
+      const ageSecs = now - next.lastChecked;
+      console.log(
+        LOG,
+        `[Bazaar] Visiting "${next.itemName}" @ $${formatNumber(next.listing.price)} from player ${next.listing.player_id}`,
+        `(updated ${Math.round(ageSecs / 60)}m ago, ${queue.length} more in queue)`
+      );
+
+      sessionStorage.setItem(SNIPE_RETURN_KEY, next.itemName);
+      sessionStorage.setItem(BAZAAR_CTX_KEY, JSON.stringify({
+        itemId:      next.itemId,
+        itemName:    next.itemName,
+        maxPrice:    next.maxPrice,
+        lastChecked: next.lastChecked,
+        money,
+        listing:     next.listing,
+        returnUrl:   location.href,
+      }));
+
+      const bazaarUrl =
+        `https://www.torn.com/bazaar.php` +
+        `?userId=${next.listing.player_id}` +
+        `&itemId=${next.itemId}` +
+        `&v=${next.lastChecked}` +
+        `&tm-autobuy=1#/`;
+
+      setStatus(`[Bazaar] Navigating → ${next.itemName} @ $${formatNumber(next.listing.price)} (${queue.length} more queued)…`);
+      await wait(400);
+      window.location.href = bazaarUrl;
     } catch (e) {
       console.warn(LOG, "runBazaarSnipeScan error", e);
     } finally {
