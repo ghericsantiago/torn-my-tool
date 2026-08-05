@@ -1725,7 +1725,7 @@
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
             <input id="tm-af2-fly-back" type="checkbox"> Fly back
           </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Stay abroad and retry every 30s until all purchase slots are filled before flying home">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Stay abroad and watch for stock changes — retries instantly when the store updates, until all purchase slots are filled">
             <input id="tm-af2-wait-full" type="checkbox"> Wait until full
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
