@@ -103,6 +103,7 @@
         "Title": "Torn reCAPTCHA",
         "Priority": "urgent",
         "Tags": "rotating_light",
+        "Click": "https://www.torn.com/recaptcha.php",
       },
       body: "A reCAPTCHA appeared on your Torn session. Solve it now.",
     }).then(function (r) {
@@ -249,8 +250,31 @@
       }
     });
 
+    // Test notification button
+    var testBtn = document.createElement("button");
+    testBtn.textContent = "📲 Test Notification";
+    testBtn.style.cssText = [
+      "padding:6px 16px",
+      "background:#1a5276",
+      "color:#fff",
+      "border:none",
+      "border-radius:6px",
+      "font-size:13px",
+      "font-weight:bold",
+      "cursor:pointer",
+      "box-shadow:0 2px 8px rgba(0,0,0,0.5)",
+      "width:100%",
+    ].join(";");
+    testBtn.addEventListener("click", function () {
+      notificationSent = false;
+      sendPushNotification();
+      testBtn.textContent = "📲 Sent!";
+      setTimeout(function () { testBtn.textContent = "📲 Test Notification"; }, 2000);
+    });
+
     wrap.appendChild(ntfyRow);
     wrap.appendChild(row);
+    wrap.appendChild(testBtn);
     wrap.appendChild(btn);
     document.body.appendChild(wrap);
   }
@@ -310,5 +334,10 @@
     var topic = prompt("Enter your ntfy.sh topic:", current);
     if (topic === null) return;
     GM_setValue(NTFY_GM_KEY, topic.trim());
+  });
+
+  GM_registerMenuCommand("Test Push Notification", function () {
+    notificationSent = false;
+    sendPushNotification();
   });
 })();
