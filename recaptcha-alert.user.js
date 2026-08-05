@@ -1,11 +1,12 @@
 // ==UserScript==
 // @name         Torn Recaptcha Alert
 // @namespace    http://tampermonkey.net/
-// @version      1.2
-// @description  Plays a looping alarm sound when Torn's recaptcha page appears
+// @version      1.3
+// @description  Plays a looping alarm sound and sends a phone push notification when Torn's recaptcha page appears
 // @author       Gheric
 // @match        https://www.torn.com/recaptcha.php*
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @connect      ntfy.sh
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -13,12 +14,14 @@
   "use strict";
 
   var STORAGE_KEY = "recaptchaAlertInterval";
+  var NTFY_STORAGE_KEY = "recaptchaAlertNtfyTopic";
   var DEFAULT_INTERVAL = 1400; // ms
 
   var audioCtx = null;
   var loopTimeout = null;
   var muted = false;
   var loopInterval = parseInt(localStorage.getItem(STORAGE_KEY), 10) || DEFAULT_INTERVAL;
+  var notificationSent = false;
 
   function getCtx() {
     if (!audioCtx) {
@@ -67,6 +70,50 @@
     }
   }
 
+  // ---- Push notification via ntfy.sh ----
+  function gmFetch(url, options) {
+    options = options || {};
+    return new Promise(function (resolve, reject) {
+      GM_xmlhttpRequest({
+        method: options.method || "GET",
+        url: url,
+        headers: options.headers || {},
+        data: options.body,
+        timeout: 15000,
+        onload: function (r) {
+          resolve({ ok: r.status >= 200 && r.status < 300, status: r.status, text: r.responseText });
+        },
+        onerror: function () { reject(new Error("GM request failed")); },
+        ontimeout: function () { reject(new Error("GM request timed out")); },
+      });
+    });
+  }
+
+  function sendPushNotification() {
+    var topic = localStorage.getItem(NTFY_STORAGE_KEY) || "";
+    if (!topic || notificationSent) return;
+    notificationSent = true;
+    gmFetch("https://ntfy.sh/" + encodeURIComponent(topic), {
+      method: "POST",
+      headers: {
+        "Title": "Torn reCAPTCHA",
+        "Priority": "urgent",
+        "Tags": "rotating_light",
+      },
+      body: "A reCAPTCHA appeared on your Torn session. Solve it now.",
+    }).then(function (r) {
+      if (!r.ok) {
+        console.warn("[RecaptchaAlert] ntfy push failed:", r.status);
+        notificationSent = false; // allow one retry on transient error
+      } else {
+        console.log("[RecaptchaAlert] Push notification sent");
+      }
+    }).catch(function (e) {
+      console.warn("[RecaptchaAlert] Push notification error:", e);
+      notificationSent = false;
+    });
+  }
+
   function buildButton() {
     var wrap = document.createElement("div");
     wrap.style.cssText = [
@@ -79,6 +126,42 @@
       "align-items:flex-end",
       "gap:6px",
     ].join(";");
+
+    // ntfy topic row
+    var ntfyRow = document.createElement("div");
+    ntfyRow.style.cssText = [
+      "display:flex",
+      "align-items:center",
+      "gap:6px",
+      "background:rgba(0,0,0,0.7)",
+      "padding:6px 10px",
+      "border-radius:6px",
+      "box-shadow:0 2px 8px rgba(0,0,0,0.5)",
+    ].join(";");
+
+    var ntfyLabel = document.createElement("label");
+    ntfyLabel.textContent = "ntfy topic:";
+    ntfyLabel.style.cssText = "color:#fff;font-size:12px;white-space:nowrap;";
+
+    var ntfyInput = document.createElement("input");
+    ntfyInput.type = "text";
+    ntfyInput.placeholder = "e.g. torn-alert-abc123";
+    ntfyInput.value = localStorage.getItem(NTFY_STORAGE_KEY) || "";
+    ntfyInput.style.cssText = [
+      "flex:1",
+      "min-width:120px",
+      "padding:3px 5px",
+      "border:none",
+      "border-radius:4px",
+      "font-size:12px",
+    ].join(";");
+
+    ntfyInput.addEventListener("change", function () {
+      localStorage.setItem(NTFY_STORAGE_KEY, ntfyInput.value.trim());
+    });
+
+    ntfyRow.appendChild(ntfyLabel);
+    ntfyRow.appendChild(ntfyInput);
 
     // Interval row
     var row = document.createElement("div");
@@ -162,6 +245,7 @@
       }
     });
 
+    wrap.appendChild(ntfyRow);
     wrap.appendChild(row);
     wrap.appendChild(btn);
     document.body.appendChild(wrap);
@@ -182,6 +266,7 @@
 
   function init() {
     buildButton();
+    sendPushNotification(); // fires once per page load; URL match = captcha detected
 
     // Watch for AudioContext becoming unblocked (e.g. browser auto-allows it)
     getCtx().addEventListener("statechange", function () {
