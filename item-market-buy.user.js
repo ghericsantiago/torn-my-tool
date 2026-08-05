@@ -31,6 +31,7 @@
   const SCAN_MIN_GAP_MS = 500;
   const ITEMS_CACHE_KEY = "tmItemMarketBuyItemsCache";
   const ITEMS_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+  const AUTOBUYSTARTTS_KEY = "tmAutoBuyStartTs";
 
   const DEFAULTS = {
     items: [], // watchlist: [{ name, maxPrice }]
@@ -39,6 +40,7 @@
     bazaarSniperEnabled: false, // scan weav3r API and navigate to bazaar when price is right
     bazaarPollSeconds: 5,       // how often to scan (seconds)
     bazaarMaxStaleMins: 15,     // reject listings older than this (minutes)
+    autoBuyDurationHours: 0,   // 0 = run indefinitely; >0 = stop after N hours
     goHome: false,              // remote command: navigate to home page on the automation device
   };
 
@@ -221,12 +223,14 @@
     settings = merged;
     const panel = document.getElementById(PANEL_ID);
     if (panel) {
-      const timeoutEl = panel.querySelector("#tm-imbuy-timeout");
-      const enabledEl = panel.querySelector("#tm-imbuy-enabled");
-      const goHomeEl  = panel.querySelector("#tm-imbuy-go-home");
-      if (timeoutEl) timeoutEl.value = String(settings.noBuySeconds ?? 20);
-      if (enabledEl) enabledEl.checked = !!settings.enabled;
-      if (goHomeEl)  goHomeEl.checked  = !!settings.goHome;
+      const timeoutEl  = panel.querySelector("#tm-imbuy-timeout");
+      const enabledEl  = panel.querySelector("#tm-imbuy-enabled");
+      const goHomeEl   = panel.querySelector("#tm-imbuy-go-home");
+      const durationEl = panel.querySelector("#tm-imbuy-duration-hours");
+      if (timeoutEl)  timeoutEl.value  = String(settings.noBuySeconds ?? 20);
+      if (enabledEl)  enabledEl.checked  = !!settings.enabled;
+      if (goHomeEl)   goHomeEl.checked   = !!settings.goHome;
+      if (durationEl) durationEl.value  = String(settings.autoBuyDurationHours || 0);
       renderItemList();
     }
     // Remote "Go Home" command: automation device navigates home and resets the flag.
@@ -802,6 +806,16 @@
     if (!isItemMarketPage()) return;
     if (busy) return;
     if (_bazaarSnipeBusy) return; // sniper is navigating to a bazaar
+    if (isAutoBuyExpired()) {
+      settings.enabled = false;
+      saveSettings(settings);
+      stopMonitor();
+      const el = document.getElementById("tm-imbuy-enabled");
+      if (el) el.checked = false;
+      setStatus(`Auto-buy stopped — ${settings.autoBuyDurationHours}h run duration elapsed.`);
+      updateTimerDisplay();
+      return;
+    }
     busy = true;
     try {
       const list = settings.items || [];
@@ -947,6 +961,7 @@
     const timeoutMs = Math.max(1, Number(settings.noBuySeconds) || 20) * 1000;
     const remainingMs = Math.max(0, timeoutMs - (Date.now() - itemStartTs));
     updateCountdown(list, remainingMs);
+    updateTimerDisplay();
     if (busy || list.length <= 1) return;
     if (remainingMs <= 0) {
       advanceItem(`no buy within ${Math.round(timeoutMs / 1000)}s`);
@@ -976,6 +991,7 @@
   function startMonitor() {
     stopMonitor();
     if (!settings.enabled) return;
+    if (!getAutoBuyStartTs()) setAutoBuyStartTs(Date.now());
     currentIndex = 0;
     itemStartTs = Date.now();
     // Observe the (stable) market wrapper so we catch both realtime row
@@ -1004,6 +1020,39 @@
       clearInterval(advanceTimer);
       advanceTimer = null;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Auto-buy run-duration timer
+  // -------------------------------------------------------------------------
+  function getAutoBuyStartTs() {
+    return parseInt(localStorage.getItem(AUTOBUYSTARTTS_KEY) || "0", 10);
+  }
+  function setAutoBuyStartTs(ts) {
+    if (ts) localStorage.setItem(AUTOBUYSTARTTS_KEY, String(ts));
+    else localStorage.removeItem(AUTOBUYSTARTTS_KEY);
+  }
+  function isAutoBuyExpired() {
+    const hours = settings.autoBuyDurationHours || 0;
+    if (hours <= 0) return false;
+    const startTs = getAutoBuyStartTs();
+    if (!startTs) return false;
+    return Date.now() - startTs >= hours * 3600000;
+  }
+  function updateTimerDisplay() {
+    const el = document.getElementById("tm-imbuy-timer-remaining");
+    if (!el) return;
+    const hours = settings.autoBuyDurationHours || 0;
+    if (hours <= 0) { el.textContent = ""; return; }
+    const startTs = getAutoBuyStartTs();
+    if (!startTs) { el.textContent = "not started"; el.style.color = "#666"; return; }
+    const remainingMs = Math.max(0, hours * 3600000 - (Date.now() - startTs));
+    if (remainingMs <= 0) { el.textContent = "expired"; el.style.color = "#f66"; return; }
+    el.style.color = "#666";
+    const remMins = Math.ceil(remainingMs / 60000);
+    el.textContent = remMins >= 60
+      ? `${Math.floor(remMins / 60)}h ${remMins % 60}m left`
+      : `${remMins}m left`;
   }
 
   // =========================================================================
@@ -1781,8 +1830,8 @@
           <div style="color:#555;font-size:10px;margin-top:4px;">Top item is bought first. &#8804; = max price cap. Blank price uses market value. Target qty = 0 means unlimited.</div>
         </details>
 
-        <!-- Options row -->
-        <div style="flex:1 1 100%;display:flex;gap:12px;flex-wrap:wrap;align-items:center;border-top:1px solid #333;padding-top:8px;">
+        <!-- Options grid (2 columns) -->
+        <div style="flex:1 1 100%;display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;border-top:1px solid #333;padding-top:8px;">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
             <input id="tm-imbuy-enabled" type="checkbox"> Auto-buy
           </label>
@@ -1794,12 +1843,22 @@
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Poll cloud every 15s to sync settings across devices.">
             <input id="tm-imbuy-cloud-poll" type="checkbox"> Cloud sync
+            <span id="tm-imbuy-cloud-next" style="font-size:10px;color:#555;font-variant-numeric:tabular-nums;"></span>
           </label>
-          <span id="tm-imbuy-cloud-next" style="font-size:10px;color:#555;font-variant-numeric:tabular-nums;"></span>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="When checked, the automation device navigates to the Torn home page. Syncs via cloud — check this from your phone to send it home.">
             <input id="tm-imbuy-go-home" type="checkbox"> Go Home
           </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;margin-left:auto;color:#f0a500;" title="View and control settings from this device without running automation. Safe for phone use.">
+          <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Auto-buy stops automatically after this many hours. Set 0 to run indefinitely.">
+            Run for
+            <input id="tm-imbuy-duration-hours" type="number" min="0" step="0.5"
+              style="width:52px;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;text-align:center;">
+            h <span style="color:#555;font-size:11px;">(0 = ∞)</span>
+          </label>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <button id="tm-imbuy-reset-timer" style="padding:3px 8px;border-radius:4px;border:1px solid #2a4a6a;background:#0a1a2a;color:#6af;cursor:pointer;font-size:12px;" title="Reset the run timer — restarts the duration countdown from now, and re-enables auto-buy if it was stopped by an expired timer">&#8635; Reset timer</button>
+            <span id="tm-imbuy-timer-remaining" style="font-size:11px;color:#666;font-variant-numeric:tabular-nums;"></span>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;color:#f0a500;" title="View and control settings from this device without running automation. Safe for phone use.">
             <input id="tm-imbuy-controller-only" type="checkbox"> Controller only
           </label>
         </div>
@@ -2073,6 +2132,33 @@
         saveSettings(settings);
       });
     }
+
+    const durationEl    = $("tm-imbuy-duration-hours");
+    const resetTimerBtn = $("tm-imbuy-reset-timer");
+
+    if (durationEl) {
+      durationEl.value = String(settings.autoBuyDurationHours || 0);
+      durationEl.addEventListener("change", () => {
+        settings.autoBuyDurationHours = Math.max(0, parseFloat(durationEl.value || "0") || 0);
+        saveSettings(settings);
+        updateTimerDisplay();
+      });
+    }
+    if (resetTimerBtn) {
+      resetTimerBtn.addEventListener("click", () => {
+        setAutoBuyStartTs(Date.now());
+        if (!settings.enabled) {
+          settings.enabled = true;
+          saveSettings(settings);
+          const enabledEl = $("tm-imbuy-enabled");
+          if (enabledEl) enabledEl.checked = true;
+          startMonitor();
+        }
+        updateTimerDisplay();
+        setStatus("Timer reset. Auto-buy running…");
+      });
+    }
+    updateTimerDisplay();
 
     setStatus(
       settings.enabled
