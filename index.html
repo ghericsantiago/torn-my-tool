@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Torn Userscripts — Design Preview</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#0d0d0d;color:#eee;font-family:Arial,Helvetica,sans-serif;font-size:14px;min-height:100vh}
+::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#111}::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
+details>summary{list-style:none}details>summary::-webkit-details-marker{display:none}
+input[type=checkbox]{accent-color:#f0a500;cursor:pointer}
+input[type=number]{-moz-appearance:textfield}input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none}
+
+/* ── Header ── */
+.ph{background:#111;border-bottom:1px solid #2a2a2a;padding:10px 20px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:200}
+.ph h1{font-size:15px;color:#f0a500;white-space:nowrap}
+.badge{font-size:10px;background:#1a1a1a;border:1px solid #333;color:#666;padding:2px 8px;border-radius:10px}
+.badge.warn{color:#c08000;border-color:#6a4000;background:#140e00}
+.dt-group{margin-left:auto;display:flex;gap:0;border:1px solid #333;border-radius:6px;overflow:hidden}
+.dt-btn{padding:5px 12px;background:#111;border:none;color:#666;cursor:pointer;font-size:11px;font-family:inherit}
+.dt-btn:hover{color:#ccc;background:#1a1a1a}
+.dt-btn.active{background:#2a1f00;color:#f0a500}
+
+/* ── Tab bar ── */
+.tab-bar{background:#111;border-bottom:1px solid #1e1e1e;padding:0 20px;display:flex;overflow-x:auto;scrollbar-width:none}
+.tab-bar::-webkit-scrollbar{display:none}
+.tb{padding:10px 14px;background:none;border:none;border-bottom:2px solid transparent;color:#666;cursor:pointer;font-size:12px;font-family:inherit;white-space:nowrap;transition:color .15s,border-color .15s}
+.tb:hover{color:#ccc}.tb.active{color:#f0a500;border-bottom-color:#f0a500}
+
+/* ── Content ── */
+.tc{display:none;padding:24px 20px}.tc.active{display:block}
+.stitle{font-size:17px;font-weight:bold;margin-bottom:3px;color:#fff}
+.sdesc{font-size:12px;color:#555;margin-bottom:24px}
+
+/* ── Preview layout ── */
+.preview-row{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+.preview-col{display:flex;flex-direction:column;gap:6px}
+.fl{font-size:10px;color:#444;text-transform:uppercase;letter-spacing:.08em}
+
+/* hide/show by device mode */
+body.mode-desktop .preview-col.mobile-col{display:none}
+body.mode-mobile  .preview-col.desktop-col{display:none}
+
+/* ── Desktop frame ── */
+.df{width:640px;max-width:100%;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:10px;overflow:hidden}
+.df.wide{width:900px}
+.chrome{background:#111;border-bottom:1px solid #1e1e1e;padding:7px 12px;display:flex;align-items:center;gap:7px}
+.dot{width:9px;height:9px;border-radius:50%}
+.dot.r{background:#ef4444}.dot.y{background:#f59e0b}.dot.g{background:#22c55e}
+.url{flex:1;background:#1a1a1a;border-radius:3px;padding:2px 8px;font-size:10px;color:#444;text-align:center;font-family:monospace}
+.pbg{background:#0f0f0f;padding:12px}
+.ptitle{font-size:12px;color:#555;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #1a1a1a}
+.ipanel{color:#eee;font-family:Arial,sans-serif;font-size:13px;background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:12px;width:100%}
+
+/* ── Mobile frame ── */
+.mf{width:375px;max-width:100%;border:1px solid #2a2a2a;border-radius:38px;overflow:hidden;background:#0d0d0d;box-shadow:0 0 0 2px #1a1a1a,0 0 0 4px #111}
+.mn{background:#0d0d0d;height:28px;display:flex;align-items:center;justify-content:center}
+.mn-bar{width:90px;height:18px;background:#111;border-radius:0 0 12px 12px}
+.ms{background:#111;height:680px;position:relative;overflow:hidden}
+.mtbg{background:#0f0f0f;height:100%;position:relative}
+.fab{position:absolute;bottom:20px;right:14px;width:50px;height:50px;border-radius:50%;background:#1a1a1a;border:2px solid #444;color:#eee;font-size:22px;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 10px rgba(0,0,0,.6);z-index:10}
+.bsb{position:absolute;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;justify-content:center;z-index:20}
+.bs{width:100%;background:#1a1a1a;border:1px solid #444;border-radius:16px 16px 0 0;padding:14px;max-height:88%;overflow-y:auto}
+.bsh{width:36px;height:4px;background:#444;border-radius:2px;margin:0 auto 12px}
+
+/* ── Desktop modal ── */
+.dmb{position:absolute;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:flex-end;justify-content:center;z-index:20}
+.dm{background:#1a1a1a;border:1px solid #444;border-radius:14px;padding:14px;width:460px;max-width:92%;max-height:82%;overflow-y:auto;margin-bottom:70px;box-shadow:0 8px 32px rgba(0,0,0,.7)}
+.dmh{width:36px;height:4px;background:#444;border-radius:2px;margin:0 auto 12px}
+
+/* ── Slide-in frame ── */
+.sf-wrap{position:relative;width:900px;max-width:100%;height:580px;background:#111;border:1px solid #2a2a2a;border-radius:10px;overflow:hidden;display:flex}
+.sf-page{flex:1;background:#0f0f0f;display:flex;align-items:center;justify-content:center;color:#2a2a2a;font-size:12px}
+.sf-panel{width:440px;flex-shrink:0;background:#12141f;color:#c8cde0;display:flex;flex-direction:column;font-size:13px;overflow:hidden;box-shadow:-8px 0 30px rgba(0,0,0,.7)}
+.sf-tab{position:absolute;right:440px;top:50%;transform:translateY(-50%);width:24px;height:72px;background:linear-gradient(to bottom,#a06000,#f0c040,#a06000);border-radius:6px 0 0 6px;display:flex;align-items:center;justify-content:center;color:#000;font-size:10px;font-weight:bold;writing-mode:vertical-rl;cursor:pointer}
+
+/* ── Travel predictor CSS ── */
+#ttp{background:#11111e;color:#d0d0d0;border:1px solid #282848;border-radius:10px;padding:12px 14px;font:12px/1.55 'Courier New',monospace;box-shadow:0 6px 28px rgba(0,0,0,.65);width:295px}
+#ttp .hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #1e1e38}
+#ttp .hdr-title{display:flex;align-items:center;gap:6px;font-weight:bold;color:#a0a8d0;font-size:12px}
+#ttp .dot2{width:8px;height:8px;border-radius:50%;background:#4CAF50;box-shadow:0 0 6px #4CAF50;display:inline-block}
+#ttp .bcol{background:none;border:1px solid #282848;color:#555;border-radius:4px;cursor:pointer;padding:1px 6px;font-size:11px}
+#ttp .body{display:flex;flex-direction:column;gap:10px}
+#ttp .sec{display:flex;flex-direction:column;gap:3px}
+#ttp .sec-hd{font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#3a4a6a;padding-bottom:3px;border-bottom:1px solid #1a1a30;margin-bottom:4px}
+#ttp .row{display:flex;justify-content:space-between;gap:8px}
+#ttp .lbl{color:#5a6a8a;font-size:11px}
+#ttp .val{color:#c8d8f8;font-size:11px;font-weight:bold;text-align:right}
+#ttp .rec{padding:6px 10px;border-radius:6px;font-size:11px;font-weight:bold;text-align:center;background:#1a1a2e;border:1px solid #2a2a4e;color:#7a9a7a}
+#ttp .conf{font-size:10px;color:#3a4a6a;text-align:center;min-height:1em}
+
+/* ── IMA CSS ── */
+#ima-hdr{padding:12px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #1e2035;flex-shrink:0}
+#ima-hdr-icon{font-size:26px}#ima-hdr h2{font-size:15px;font-weight:700;color:#e0e4f8;margin:0}
+#ima-hdr-sub{font-size:10px;color:#3a4260;margin-top:1px}
+#ima-close{margin-left:auto;background:none;border:1px solid #2a2d4a;color:#3a4260;border-radius:5px;cursor:pointer;padding:3px 8px;font-size:13px}
+#ima-controls{padding:8px 16px;border-bottom:1px solid #1e2035;display:flex;flex-direction:column;gap:5px;flex-shrink:0}
+.ima-cr{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.ima-cr label{font-size:11px;color:#3a4260;white-space:nowrap}
+.ima-cr input{background:#1a1d2e;border:1px solid #2a2d4a;color:#c8cde0;border-radius:3px;padding:3px 5px;font-size:11px;outline:none}
+.ima-cr input[type=text]{min-width:120px;flex:1}.ima-cr #ima-item-id{width:60px;flex:none}
+.ima-cr #ima-status{font-size:10px;color:#3a4260}
+.ima-nav,.ima-tf-btn,.ima-btn{background:#1a1d2e;border:1px solid #2a2d4a;color:#5a6290;border-radius:3px;cursor:pointer;padding:3px 7px;font-size:11px;font-family:inherit}
+.ima-tf-btn.active{background:#243060;border-color:#3a5abf;color:#a0b0f0}
+.ima-btn.blue{background:#182060;border-color:#2a4a9f;color:#7090d0}
+#ima-summary{padding:8px 16px;display:flex;gap:6px;border-bottom:1px solid #1e2035;flex-shrink:0}
+.ima-tile{flex:1;background:#1a1d2e;border:1px solid #2a2d4a;border-radius:5px;padding:7px 9px;min-width:0}
+.ima-tile.blue{border-color:#253880}.ima-tile.gold{border-color:#604a1a}.ima-tile.green{border-color:#1a4224}.ima-tile.red{border-color:#421a1a}
+.ima-tl{font-size:9px;color:#3a4260;text-transform:uppercase;letter-spacing:.05em}
+.ima-tv{font-size:15px;font-weight:bold;color:#c8cde0;margin-top:1px}
+.ima-tile.blue .ima-tv{color:#5080d8}.ima-tile.gold .ima-tv{color:#c89030}.ima-tile.green .ima-tv{color:#38a058}.ima-tile.red .ima-tv{color:#c83838}
+#ima-tabs{padding:5px 16px 0;display:flex;gap:3px;border-bottom:1px solid #1e2035;flex-shrink:0}
+.ima-tab{padding:5px 10px;background:none;border:1px solid transparent;border-bottom:none;color:#3a4260;cursor:pointer;font-size:11px;font-family:inherit;border-radius:3px 3px 0 0}
+.ima-tab.active{background:#1a1d2e;border-color:#2a2d4a;color:#c8cde0}
+#ima-best-btn,#ima-calc-btn{margin-left:4px;padding:4px 9px;background:#1a1d2e;border:1px solid #2a2d4a;color:#5a6290;cursor:pointer;font-size:11px;font-family:inherit;border-radius:3px}
+#ima-content{flex:1;overflow:hidden;padding:12px 16px;display:flex;flex-direction:column}
+#ima-chart-controls{display:flex;gap:3px;margin-bottom:8px}
+.ima-ct{background:#1a1d2e;border:1px solid #2a2d4a;color:#5a6290;cursor:pointer;font-size:10px;font-family:inherit;border-radius:3px;padding:2px 8px}
+.ima-ct.active{background:#243060;border-color:#3a5abf;color:#a0b0f0}
+#ima-chart-area{flex:1;background:#1a1d2e;border:1px solid #2a2d4a;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#3a4260;font-size:11px;min-height:200px}
+
+/* ── Portfolio CSS ── */
+#pt-hdr{padding:12px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #1e2035;flex-shrink:0}
+#pt-hdr-icon{font-size:26px}#pt-hdr h2{font-size:15px;font-weight:700;color:#e0e4f8;margin:0}
+#pt-hdr-sub{font-size:10px;color:#3a4260;margin-top:1px}
+#pt-close{margin-left:auto;background:none;border:1px solid #2a2d4a;color:#3a4260;border-radius:5px;cursor:pointer;padding:3px 8px;font-size:13px}
+#pt-controls{padding:8px 16px;border-bottom:1px solid #1e2035;display:flex;flex-direction:column;gap:5px;flex-shrink:0}
+.pt-cr{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.pt-cr label{font-size:11px;color:#3a4260;white-space:nowrap}
+.pt-cr input{background:#1a1d2e;border:1px solid #2a2d4a;color:#c8cde0;border-radius:3px;padding:3px 5px;font-size:11px;outline:none}
+.pt-cr input[type=date]{width:120px}.pt-cr input[type=number]{width:46px}
+#pt-search{min-width:120px;flex:1}.pt-nav{background:#1a1d2e;border:1px solid #2a2d4a;color:#5a6290;border-radius:3px;cursor:pointer;padding:3px 7px;font-size:13px}
+#pt-status{font-size:10px;color:#3a4260}
+.pt-btn{padding:4px 10px;border-radius:3px;border:1px solid #2a2d4a;background:#1a1d2e;color:#c8cde0;cursor:pointer;font-size:11px;font-family:inherit}
+#pt-summary{padding:8px 16px;display:flex;gap:6px;border-bottom:1px solid #1e2035;flex-shrink:0}
+.pt-tile{flex:1;background:#1a1d2e;border:1px solid #2a2d4a;border-radius:5px;padding:7px 9px;min-width:0}
+.pt-tile.blue{border-color:#253880}.pt-tile.red{border-color:#421a1a}.pt-tile.green{border-color:#1a4224}.pt-tile.purple{border-color:#3a1852}
+.pt-tl{font-size:9px;color:#3a4260;text-transform:uppercase;letter-spacing:.05em}
+.pt-tv{font-size:15px;font-weight:bold;color:#c8cde0;margin-top:1px}
+.pt-tile.blue .pt-tv{color:#5080d8}.pt-tile.red .pt-tv{color:#c83838}.pt-tile.green .pt-tv{color:#38a058}.pt-tile.purple .pt-tv{color:#9050d8}
+#pt-tabs{padding:5px 16px 0;display:flex;gap:3px;border-bottom:1px solid #1e2035;flex-shrink:0}
+.pt-tab{padding:5px 10px;background:none;border:1px solid transparent;border-bottom:none;color:#3a4260;cursor:pointer;font-size:11px;font-family:inherit;border-radius:3px 3px 0 0}
+.pt-tab.active{background:#1a1d2e;border-color:#2a2d4a;color:#c8cde0}
+.pt-tn{background:#252840;border-radius:7px;padding:0 5px;font-size:10px;margin-left:3px}
+#pt-chart-btn{margin-left:auto;padding:4px 9px;background:#1a1d2e;border:1px solid #2a2d4a;color:#5a6290;cursor:pointer;font-size:11px;font-family:inherit;border-radius:3px}
+#pt-body{flex:1;overflow-y:auto}
+.pt-tw{overflow-x:auto;padding:8px 16px 16px}
+.pt-tw table{width:100%;border-collapse:collapse;font-size:11px}
+.pt-tw th{padding:5px 7px;text-align:left;color:#3a4260;border-bottom:1px solid #1e2035;font-weight:normal;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+.pt-tw th.r,.pt-tw td.r{text-align:right}
+.pt-tw td{padding:5px 7px;border-bottom:1px solid #161830;color:#c8cde0}
+.pt-tw .empty{color:#3a4260;text-align:center;padding:18px}
+</style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<div class="ph">
+  <h1>🎮 Torn Userscripts</h1>
+  <span class="badge">Design Preview</span>
+  <span class="badge warn">Static — controls are visual only</span>
+  <div class="dt-group">
+    <button class="dt-btn active" data-mode="both">Both</button>
+    <button class="dt-btn" data-mode="desktop">Desktop</button>
+    <button class="dt-btn" data-mode="mobile">Mobile</button>
+  </div>
+</div>
+
+<!-- ── Tabs ── -->
+<div class="tab-bar">
+  <button class="tb active" data-tab="fp">✈ Flight Planner v2</button>
+  <button class="tb" data-tab="mb">🛒 Market Auto Buy</button>
+  <button class="tb" data-tab="pv">🏛 Vault Manager</button>
+  <button class="tb" data-tab="tp">🔮 Travel Predictor</button>
+  <button class="tb" data-tab="ima">📈 Market Analyzer</button>
+  <button class="tb" data-tab="pt">💰 Portfolio Tracker</button>
+  <button class="tb" data-tab="rc">🔔 Recaptcha Alert</button>
+</div>
+
+<!-- ══════════════════════════════ FLIGHT PLANNER V2 ══════════════════════════════ -->
+<div class="tc active" id="tab-fp">
+  <p class="stitle">✈ Torn Flight Planner v2</p>
+  <p class="sdesc">auto-fly.user-v2.js — Automated flight plan + abroad shopping, gym, rehab, cloud sync. Desktop: inline panel. Mobile: FAB + bottom sheet.</p>
+  <div class="preview-row">
+    <!-- Desktop -->
+    <div class="preview-col desktop-col">
+      <div class="fl">Desktop — inline panel</div>
+      <div class="df">
+        <div class="chrome"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="url">torn.com/travelagency.php</div></div>
+        <div class="pbg">
+          <div class="ptitle">Travel Agency</div>
+          <div class="ipanel" id="fp-panel-d"></div>
+        </div>
+      </div>
+    </div>
+    <!-- Mobile -->
+    <div class="preview-col mobile-col">
+      <div class="fl">Mobile — FAB + bottom sheet</div>
+      <div class="mf">
+        <div class="mn"><div class="mn-bar"></div></div>
+        <div class="ms">
+          <div class="mtbg">
+            <div class="fab">✈</div>
+            <div class="bsb"><div class="bs"><div class="bsh"></div><div id="fp-panel-m"></div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════ MARKET AUTO BUY ══════════════════════════════ -->
+<div class="tc" id="tab-mb">
+  <p class="stitle">🛒 Item Market Auto Buy</p>
+  <p class="sdesc">item-market-buy.user.js — Watchlist-based auto buyer with bazaar sniper, no-buy timeout cycling, run-duration timer, cloud sync. Desktop: FAB + modal. Mobile: FAB + bottom sheet.</p>
+  <div class="preview-row">
+    <!-- Desktop modal -->
+    <div class="preview-col desktop-col">
+      <div class="fl">Desktop — FAB + modal</div>
+      <div class="df" style="width:660px;height:560px;position:relative;overflow:hidden;">
+        <div class="chrome"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="url">torn.com/page.php?sid=ItemMarket</div></div>
+        <div class="pbg" style="height:calc(100% - 31px);position:relative;background:#0f0f0f;">
+          <div class="fab" style="position:absolute;">🛒</div>
+          <div class="dmb"><div class="dm"><div class="dmh"></div><div id="mb-panel-d"></div></div></div>
+        </div>
+      </div>
+    </div>
+    <!-- Mobile -->
+    <div class="preview-col mobile-col">
+      <div class="fl">Mobile — FAB + bottom sheet</div>
+      <div class="mf">
+        <div class="mn"><div class="mn-bar"></div></div>
+        <div class="ms">
+          <div class="mtbg">
+            <div class="fab">🛒</div>
+            <div class="bsb"><div class="bs"><div class="bsh"></div><div id="mb-panel-m"></div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════ PROPERTY VAULT ══════════════════════════════ -->
+<div class="tc" id="tab-pv">
+  <p class="stitle">🏛 Vault Cash Manager</p>
+  <p class="sdesc">property-vault.user.js — Auto deposit/withdraw to maintain a target cash amount, attack detection, cloud sync. Desktop: inline panel. Mobile: FAB + bottom sheet.</p>
+  <div class="preview-row">
+    <div class="preview-col desktop-col">
+      <div class="fl">Desktop — inline panel</div>
+      <div class="df">
+        <div class="chrome"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="url">torn.com/properties.php</div></div>
+        <div class="pbg">
+          <div class="ptitle">Properties</div>
+          <div class="ipanel" id="pv-panel-d"></div>
+        </div>
+      </div>
+    </div>
+    <div class="preview-col mobile-col">
+      <div class="fl">Mobile — FAB + bottom sheet</div>
+      <div class="mf">
+        <div class="mn"><div class="mn-bar"></div></div>
+        <div class="ms">
+          <div class="mtbg">
+            <div class="fab">🏛</div>
+            <div class="bsb"><div class="bs"><div class="bsh"></div><div id="pv-panel-m"></div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════ TRAVEL PREDICTOR ══════════════════════════════ -->
+<div class="tc" id="tab-tp">
+  <p class="stitle">🔮 Torn Travel Predictor</p>
+  <p class="sdesc">torn-travel-predictor.user.js — Predicts restock/sellout timing for a configured item in a foreign country. Fixed draggable panel, same on desktop and mobile.</p>
+  <div class="preview-row">
+    <div class="preview-col desktop-col">
+      <div class="fl">Desktop — fixed draggable panel (top-right)</div>
+      <div class="df" style="height:360px;position:relative;">
+        <div class="chrome"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="url">torn.com/page.php?sid=ItemMarket#/market/…</div></div>
+        <div class="pbg" style="height:calc(100% - 31px);position:relative;background:#0f0f0f;display:flex;justify-content:flex-end;align-items:flex-start;padding:10px;">
+          <div id="ttp"></div>
+        </div>
+      </div>
+    </div>
+    <div class="preview-col mobile-col">
+      <div class="fl">Mobile — same fixed panel</div>
+      <div class="mf">
+        <div class="mn"><div class="mn-bar"></div></div>
+        <div class="ms" style="background:#0f0f0f;display:flex;justify-content:flex-end;align-items:flex-start;padding:8px;">
+          <div id="ttp-m" style="width:100%;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════ MARKET ANALYZER ══════════════════════════════ -->
+<div class="tc" id="tab-ima">
+  <p class="stitle">📈 Item Market Analyzer</p>
+  <p class="sdesc">item-market-analyzer.user.js — Price history charts, best items to buy, profit calculator. Slide-in panel from right edge (same on mobile/desktop).</p>
+  <div class="preview-row">
+    <div class="preview-col desktop-col">
+      <div class="fl">Desktop — slide-in panel (open)</div>
+      <div class="sf-wrap">
+        <div class="sf-page">← Torn page content</div>
+        <div class="sf-tab">IMA</div>
+        <div class="sf-panel">
+          <div id="ima-hdr">
+            <div id="ima-hdr-icon">📈</div>
+            <div><h2>Item Market Analyzer</h2><div id="ima-hdr-sub">Torn Market Analytics</div></div>
+            <button id="ima-close">✕</button>
+          </div>
+          <div id="ima-controls">
+            <div class="ima-cr">
+              <label>Item</label>
+              <input type="text" id="ima-item-name" placeholder="Search item name…" value="Jaguar Plushie">
+              <label>ID</label>
+              <input type="text" id="ima-item-id" placeholder="—" value="437">
+              <span id="ima-status" style="color:#38a058;font-size:10px;">✓ loaded</span>
+            </div>
+            <div class="ima-cr">
+              <button class="ima-nav">‹</button>
+              <label>From</label><input type="date" value="2026-08-01">
+              <label>To</label><input type="date" value="2026-08-05">
+              <button class="ima-nav">›</button>
+            </div>
+            <div class="ima-cr">
+              <label>TF</label>
+              <button class="ima-tf-btn">1D</button><button class="ima-tf-btn">1H</button>
+              <button class="ima-tf-btn">30M</button><button class="ima-tf-btn active">15M</button>
+              <button class="ima-tf-btn">5M</button><button class="ima-tf-btn">1M</button>
+              <div style="flex:1"></div>
+              <button class="ima-btn">Apply</button>
+              <button class="ima-btn" style="color:#5a6290">Reset</button>
+              <button class="ima-btn blue">↻ Auto</button>
+            </div>
+          </div>
+          <div id="ima-summary">
+            <div class="ima-tile blue"><div class="ima-tl">Data Points</div><div class="ima-tv">1,284</div></div>
+            <div class="ima-tile gold"><div class="ima-tl">Avg Price</div><div class="ima-tv">$2.42M</div></div>
+            <div class="ima-tile green"><div class="ima-tl">Min Price</div><div class="ima-tv">$2.31M</div></div>
+            <div class="ima-tile red"><div class="ima-tl">Max Price</div><div class="ima-tv">$2.59M</div></div>
+          </div>
+          <div id="ima-tabs">
+            <button class="ima-tab active">📊 Chart</button>
+            <button class="ima-tab">📋 Table</button>
+            <button id="ima-best-btn">⭐ Best</button>
+            <button id="ima-calc-btn">🧮 Calc</button>
+          </div>
+          <div id="ima-content">
+            <div id="ima-chart-controls">
+              <button class="ima-ct active">Line</button>
+              <button class="ima-ct">Bar</button>
+              <button class="ima-ct">Scatter</button>
+            </div>
+            <div id="ima-chart-area">📊 Chart renders here (Chart.js)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="preview-col mobile-col">
+      <div class="fl">Mobile — full-width slide-in</div>
+      <div class="mf">
+        <div class="mn"><div class="mn-bar"></div></div>
+        <div class="ms" style="display:flex;flex-direction:column;">
+          <div style="flex:1;background:#0f0f0f;display:flex;align-items:center;justify-content:center;color:#2a2a2a;font-size:11px;">Torn page</div>
+          <div style="height:460px;background:#12141f;display:flex;flex-direction:column;color:#c8cde0;font-size:11px;overflow:hidden;">
+            <div style="padding:10px 12px;border-bottom:1px solid #1e2035;display:flex;align-items:center;gap:8px;">
+              <span style="font-size:20px;">📈</span>
+              <div><div style="font-weight:bold;font-size:13px;color:#e0e4f8;">Market Analyzer</div><div style="font-size:10px;color:#3a4260;">Torn Market Analytics</div></div>
+              <button style="margin-left:auto;background:none;border:1px solid #2a2d4a;color:#3a4260;border-radius:4px;cursor:pointer;padding:2px 6px;font-size:11px;">✕</button>
+            </div>
+            <div style="padding:8px 12px;border-bottom:1px solid #1e2035;display:flex;gap:5px;flex-wrap:wrap;">
+              <input type="text" value="Jaguar Plushie" style="flex:1;background:#1a1d2e;border:1px solid #2a2d4a;color:#c8cde0;border-radius:3px;padding:4px 6px;font-size:11px;min-width:0">
+              <button style="background:#182060;border:1px solid #2a4a9f;color:#7090d0;border-radius:3px;cursor:pointer;padding:4px 8px;font-size:11px;font-family:inherit;">Apply</button>
+            </div>
+            <div style="padding:6px 12px;display:flex;gap:5px;border-bottom:1px solid #1e2035;">
+              <div style="flex:1;background:#1a1d2e;border:1px solid #253880;border-radius:4px;padding:6px 8px;"><div style="font-size:9px;color:#3a4260;text-transform:uppercase;">Avg</div><div style="font-size:13px;font-weight:bold;color:#c89030;">$2.42M</div></div>
+              <div style="flex:1;background:#1a1d2e;border:1px solid #1a4224;border-radius:4px;padding:6px 8px;"><div style="font-size:9px;color:#3a4260;text-transform:uppercase;">Min</div><div style="font-size:13px;font-weight:bold;color:#38a058;">$2.31M</div></div>
+              <div style="flex:1;background:#1a1d2e;border:1px solid #421a1a;border-radius:4px;padding:6px 8px;"><div style="font-size:9px;color:#3a4260;text-transform:uppercase;">Max</div><div style="font-size:13px;font-weight:bold;color:#c83838;">$2.59M</div></div>
+            </div>
+            <div style="flex:1;background:#1a1d2e;margin:10px;border-radius:5px;display:flex;align-items:center;justify-content:center;color:#3a4260;font-size:11px;">📊 Chart renders here</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════ PORTFOLIO TRACKER ══════════════════════════════ -->
+<div class="tc" id="tab-pt">
+  <p class="stitle">💰 Portfolio Tracker</p>
+  <p class="sdesc">portfolio-tracker.user.js — Transaction history analytics, buy/sell tracking, profit estimation, Chart.js bar chart. Slide-in panel from right edge.</p>
+  <div class="preview-row">
+    <div class="preview-col desktop-col">
+      <div class="fl">Desktop — slide-in panel (open)</div>
+      <div class="sf-wrap">
+        <div class="sf-page">← Torn page content</div>
+        <div class="sf-tab">PT</div>
+        <div class="sf-panel">
+          <div id="pt-hdr">
+            <div id="pt-hdr-icon">💰</div>
+            <div><h2>Portfolio Tracker</h2><div id="pt-hdr-sub">Torn Transaction Analytics</div></div>
+            <button id="pt-close">✕</button>
+          </div>
+          <div id="pt-controls">
+            <div class="pt-cr">
+              <button class="pt-nav">‹</button>
+              <label>From</label><input type="date" value="2026-08-01">
+              <label>To</label><input type="date" value="2026-08-05">
+              <button class="pt-nav">›</button>
+            </div>
+            <div class="pt-cr">
+              <label>Tax%</label><input type="number" value="5">
+              <input type="text" id="pt-search" placeholder="🔍 Search item...">
+              <button class="pt-btn">Load Data</button>
+              <span id="pt-status">Ready</span>
+            </div>
+          </div>
+          <div id="pt-summary">
+            <div class="pt-tile blue"><div class="pt-tl">Total Items</div><div class="pt-tv">42</div></div>
+            <div class="pt-tile red"><div class="pt-tl">Total Spent</div><div class="pt-tv">$84.2M</div></div>
+            <div class="pt-tile green"><div class="pt-tl">Total Sold</div><div class="pt-tv">$91.7M</div></div>
+            <div class="pt-tile purple"><div class="pt-tl">Est. Profit</div><div class="pt-tv">$7.5M</div></div>
+          </div>
+          <div id="pt-tabs">
+            <button class="pt-tab active">Purchased <span class="pt-tn">28</span></button>
+            <button class="pt-tab">Sold <span class="pt-tn">14</span></button>
+            <button id="pt-chart-btn">📈 Chart</button>
+          </div>
+          <div id="pt-body">
+            <div class="pt-tw">
+              <table>
+                <thead><tr>
+                  <th>Item</th><th>Store</th>
+                  <th class="r">Qty</th><th class="r">Avg</th><th class="r">Total</th>
+                  <th class="r">Mkt Price</th><th class="r">Est. Profit</th><th class="r">$/Unit</th>
+                </tr></thead>
+                <tbody>
+                  <tr><td>Jaguar Plushie</td><td>Mexico</td><td class="r">28</td><td class="r">$2.41M</td><td class="r">$67.5M</td><td class="r">$2.50M</td><td class="r" style="color:#38a058;">+$2.52M</td><td class="r">$90k</td></tr>
+                  <tr><td>Samurai Mask</td><td>Japan</td><td class="r">14</td><td class="r">$3.82M</td><td class="r">$53.5M</td><td class="r">$4.10M</td><td class="r" style="color:#38a058;">+$3.92M</td><td class="r">$280k</td></tr>
+                  <tr><td class="empty" colspan="8">— End of results —</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="preview-col mobile-col">
+      <div class="fl">Mobile — full-width slide-in</div>
+      <div class="mf">
+        <div class="mn"><div class="mn-bar"></div></div>
+        <div class="ms" style="display:flex;flex-direction:column;">
+          <div style="flex:1;background:#0f0f0f;display:flex;align-items:center;justify-content:center;color:#2a2a2a;font-size:11px;">Torn page</div>
+          <div style="height:480px;background:#12141f;display:flex;flex-direction:column;color:#c8cde0;font-size:11px;overflow:hidden;">
+            <div style="padding:10px 12px;border-bottom:1px solid #1e2035;display:flex;align-items:center;gap:8px;">
+              <span style="font-size:20px;">💰</span>
+              <div><div style="font-weight:bold;font-size:13px;color:#e0e4f8;">Portfolio Tracker</div><div style="font-size:10px;color:#3a4260;">Torn Transaction Analytics</div></div>
+              <button style="margin-left:auto;background:none;border:1px solid #2a2d4a;color:#3a4260;border-radius:4px;cursor:pointer;padding:2px 6px;font-size:11px;">✕</button>
+            </div>
+            <div style="padding:7px 12px;display:flex;gap:5px;flex-wrap:wrap;border-bottom:1px solid #1e2035;">
+              <input type="date" value="2026-08-01" style="flex:1;background:#1a1d2e;border:1px solid #2a2d4a;color:#c8cde0;border-radius:3px;padding:3px 5px;font-size:10px;min-width:0">
+              <input type="date" value="2026-08-05" style="flex:1;background:#1a1d2e;border:1px solid #2a2d4a;color:#c8cde0;border-radius:3px;padding:3px 5px;font-size:10px;min-width:0">
+              <button style="background:#1a1d2e;border:1px solid #2a2d4a;color:#c8cde0;border-radius:3px;cursor:pointer;padding:3px 8px;font-size:10px;font-family:inherit;white-space:nowrap;">Load</button>
+            </div>
+            <div style="padding:6px 12px;display:flex;gap:4px;border-bottom:1px solid #1e2035;">
+              <div style="flex:1;background:#1a1d2e;border:1px solid #421a1a;border-radius:4px;padding:5px 7px;"><div style="font-size:9px;color:#3a4260;text-transform:uppercase;">Spent</div><div style="font-size:12px;font-weight:bold;color:#c83838;">$84.2M</div></div>
+              <div style="flex:1;background:#1a1d2e;border:1px solid #1a4224;border-radius:4px;padding:5px 7px;"><div style="font-size:9px;color:#3a4260;text-transform:uppercase;">Sold</div><div style="font-size:12px;font-weight:bold;color:#38a058;">$91.7M</div></div>
+              <div style="flex:1;background:#1a1d2e;border:1px solid #3a1852;border-radius:4px;padding:5px 7px;"><div style="font-size:9px;color:#3a4260;text-transform:uppercase;">Profit</div><div style="font-size:12px;font-weight:bold;color:#9050d8;">$7.5M</div></div>
+            </div>
+            <div style="flex:1;overflow-y:auto;padding:8px 12px;display:flex;flex-direction:column;gap:6px;">
+              <div style="background:#1a1d2e;border:1px solid #2a2d4a;border-radius:5px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;">
+                <div><div style="font-size:12px;font-weight:bold;">Jaguar Plushie</div><div style="font-size:10px;color:#3a4260;margin-top:2px;">Mexico · 28 bought @ $2.41M avg</div></div>
+                <div style="text-align:right"><div style="font-size:11px;color:#38a058;">+$2.52M</div><div style="font-size:10px;color:#3a4260;">profit</div></div>
+              </div>
+              <div style="background:#1a1d2e;border:1px solid #2a2d4a;border-radius:5px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;">
+                <div><div style="font-size:12px;font-weight:bold;">Samurai Mask</div><div style="font-size:10px;color:#3a4260;margin-top:2px;">Japan · 14 bought @ $3.82M avg</div></div>
+                <div style="text-align:right"><div style="font-size:11px;color:#38a058;">+$3.92M</div><div style="font-size:10px;color:#3a4260;">profit</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════ RECAPTCHA ALERT ══════════════════════════════ -->
+<div class="tc" id="tab-rc">
+  <p class="stitle">🔔 Torn Recaptcha Alert</p>
+  <p class="sdesc">recaptcha-alert.user.js — Plays a repeating audio alert when a recaptcha appears. Simple fixed bottom-right widget with mute toggle and interval setting.</p>
+  <div class="preview-row">
+    <div class="preview-col desktop-col">
+      <div class="fl">Desktop — fixed widget (bottom-right)</div>
+      <div class="df" style="height:240px;position:relative;">
+        <div class="chrome"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div><div class="url">torn.com — recaptcha detected</div></div>
+        <div class="pbg" style="height:calc(100% - 31px);position:relative;display:flex;align-items:flex-end;justify-content:flex-end;padding:16px;background:#0f0f0f;">
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+            <div style="display:flex;align-items:center;gap:6px;background:rgba(0,0,0,0.7);padding:6px 10px;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.5);">
+              <label style="font-size:13px;color:#eee;">Repeat every</label>
+              <input type="number" value="10" style="width:52px;padding:3px 6px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:13px;">
+              <span style="font-size:13px;color:#aaa;">s</span>
+            </div>
+            <button style="padding:10px 16px;background:#c0392b;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:bold;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.5);width:100%;">🔔 Mute Alert</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="preview-col mobile-col">
+      <div class="fl">Mobile — same widget</div>
+      <div class="mf">
+        <div class="mn"><div class="mn-bar"></div></div>
+        <div class="ms" style="background:#0f0f0f;display:flex;align-items:flex-end;justify-content:flex-end;padding:14px;">
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;width:200px;">
+            <div style="display:flex;align-items:center;gap:6px;background:rgba(0,0,0,0.7);padding:6px 10px;border-radius:6px;width:100%;">
+              <label style="font-size:12px;color:#eee;">Every</label>
+              <input type="number" value="10" style="width:46px;padding:3px 5px;background:#222;border:1px solid #444;color:#eee;border-radius:4px;font-size:12px;">
+              <span style="font-size:12px;color:#aaa;">s</span>
+            </div>
+            <button style="padding:9px 14px;background:#c0392b;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:bold;cursor:pointer;width:100%;">🔔 Mute Alert</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════ PANEL HTML TEMPLATES ══════════════════════════════ -->
+<template id="tpl-fp">
+<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;box-sizing:border-box;width:100%;">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex:1 1 100%;">
+    <strong>✈ Torn Flight Planner v2</strong>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button style="padding:2px 8px;background:#222;border:1px solid #444;color:#aaa;border-radius:3px;cursor:pointer;font-size:11px;">📋 Logs</button>
+      <span style="font-size:11px;color:#f0a500;font-weight:bold;">14:32 TCT</span>
+    </div>
+  </div>
+  <span style="flex:1 1 100%;color:#f0a500;font-weight:bold;font-size:12px;">Abroad — Mexico | Shopping in progress…</span>
+  <div style="flex:1 1 100%;display:flex;gap:12px;flex-wrap:wrap;align-items:center;border-top:1px solid #333;padding-top:8px;">
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox" checked> Auto-fly</label>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox" checked> Fly back</label>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Stay abroad and watch for stock changes — retries instantly when the store updates, until all purchase slots are filled"><input type="checkbox"> Wait until full</label>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox"> Skip warnings</label>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="When all flights are done, reset the whole plan and start over automatically"><input type="checkbox"> Loop plan ↺</label>
+    <label style="display:flex;align-items:center;gap:6px;user-select:none;">Delay: <input type="number" value="3" min="0" max="120" style="width:44px;padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;text-align:center;"> s</label>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox" checked> Cloud sync</label>
+    <span style="font-size:11px;font-weight:bold;color:#22c55e;">✓</span>
+    <span style="font-size:10px;color:#555;">↻ 8s</span>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;margin-left:auto;color:#f0a500;"><input type="checkbox"> Controller only</label>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;color:#44cc88;"><input type="checkbox"> Go Item Market</label>
+  </div>
+  <div style="display:none;flex:1 1 100%;background:#2a1f00;border:1px solid #f0a500;border-radius:4px;padding:5px 10px;font-size:11px;color:#f0a500;text-align:center;">Controller Only Mode — automation is paused on this device</div>
+  <details open style="flex:1 1 100%;border-top:1px solid #333;padding-top:6px;">
+    <summary style="cursor:pointer;color:#aaa;font-size:12px;user-select:none;display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-weight:bold;">Flight Plan <span style="font-weight:normal;color:#666;font-size:11px;">(sorted by departure time)</span></span>
+      <button style="padding:2px 8px;background:#222;border:1px solid #444;color:#aaa;border-radius:3px;cursor:pointer;font-size:11px;">Reset Done</button>
+    </summary>
+    <div style="margin-top:6px;">
+      <div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #222;font-size:12px;">
+        <span style="color:#f0a500;">✈</span>
+        <span style="flex:1;">Mexico</span>
+        <span style="color:#555;font-size:11px;">14:30 TCT</span>
+        <span style="color:#555;font-size:11px;">★ Jaguar Plushie</span>
+        <button style="padding:1px 5px;background:#220000;border:1px solid #622;color:#f66;border-radius:3px;cursor:pointer;font-size:11px;">✕</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #222;font-size:12px;">
+        <span style="color:#22c55e;">●</span>
+        <span style="flex:1;">Japan</span>
+        <span style="color:#555;font-size:11px;">22:00 TCT</span>
+        <button style="padding:1px 5px;background:#220000;border:1px solid #622;color:#f66;border-radius:3px;cursor:pointer;font-size:11px;">✕</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center;">
+      <select style="flex:1;min-width:130px;padding:4px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;">
+        <option>Argentina</option><option>Canada</option><option>Cayman Islands</option><option>China</option><option>Hawaii</option><option>Japan</option><option selected>Mexico</option><option>South Africa</option><option>Switzerland</option><option>United Arab Emirates</option><option>United Kingdom</option>
+      </select>
+      <input type="text" placeholder="HH:MM" maxlength="5" style="padding:4px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;width:70px;">
+      <input type="text" placeholder="Priority product…" style="flex:2;min-width:120px;padding:4px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;">
+      <button style="padding:4px 10px;border-radius:4px;border:1px solid #555;background:#333;color:#eee;cursor:pointer;font-size:12px;white-space:nowrap;">+ Add Flight</button>
+    </div>
+    <div style="color:#555;font-size:10px;margin-top:4px;">Time is optional (TCT/UTC). ASAP = no time set. ● = ready. ✈ = flying. ✓ = done. ★ = priority product.</div>
+  </details>
+  <details style="flex:1 1 100%;border-top:1px solid #333;padding-top:6px;">
+    <summary style="cursor:pointer;color:#aaa;font-size:12px;user-select:none;font-weight:bold;">Automation ⚙️</summary>
+    <div style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;">
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <span style="color:#666;font-size:10px;text-transform:uppercase;letter-spacing:.05em;">Gym</span>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox"> Auto-Gym 🏋 (trains before flying when energy is full)</label>
+        <label style="display:flex;align-items:center;gap:6px;user-select:none;">Stat: <select style="padding:2px 6px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;"><option>Strength</option><option>Defense</option><option>Speed</option><option>Dexterity</option></select></label>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;border-left:1px solid #333;padding-left:12px;">
+        <span style="color:#666;font-size:10px;text-transform:uppercase;letter-spacing:.05em;">Nerve</span>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox"> Hold flight if nerve full ⚡</label>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;border-left:1px solid #333;padding-left:12px;">
+        <span style="color:#666;font-size:10px;text-transform:uppercase;letter-spacing:.05em;">Rehab</span>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox"> Auto-Rehab 💉 (Switzerland)</label>
+        <label style="display:flex;align-items:center;gap:6px;user-select:none;">Min addiction: <input type="number" value="2" min="1" max="4" style="width:40px;padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;text-align:center;"> <span style="color:#666;font-size:10px;">(rehabs when &gt; this)</span></label>
+      </div>
+    </div>
+  </details>
+  <details style="flex:1 1 100%;border-top:1px solid #333;padding-top:6px;">
+    <summary style="cursor:pointer;color:#aaa;font-size:12px;user-select:none;font-weight:bold;">Shopping List (2 items) — top = first bought</summary>
+    <div style="margin-top:6px;">
+      <div style="display:flex;align-items:center;gap:4px;padding:4px 0;border-bottom:1px solid #222;font-size:12px;">
+        <span style="color:#555;font-size:10px;min-width:16px;text-align:right;">1.</span>
+        <span style="flex:1;">Jaguar Plushie</span>
+        <button style="padding:1px 5px;background:#1a2a3a;border:1px solid #2a4a6a;color:#6af;border-radius:3px;cursor:pointer;font-size:11px;">✎</button>
+        <button style="padding:1px 5px;background:#222;border:1px solid #444;color:#ccc;border-radius:3px;cursor:pointer;font-size:11px;" disabled>↑</button>
+        <button style="padding:1px 5px;background:#222;border:1px solid #444;color:#ccc;border-radius:3px;cursor:pointer;font-size:11px;">↓</button>
+        <button style="padding:1px 5px;background:#220000;border:1px solid #622;color:#f66;border-radius:3px;cursor:pointer;font-size:11px;">✕</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:4px;padding:4px 0;border-bottom:1px solid #222;font-size:12px;">
+        <span style="color:#555;font-size:10px;min-width:16px;text-align:right;">2.</span>
+        <span style="flex:1;">Samurai Mask</span>
+        <button style="padding:1px 5px;background:#1a2a3a;border:1px solid #2a4a6a;color:#6af;border-radius:3px;cursor:pointer;font-size:11px;">✎</button>
+        <button style="padding:1px 5px;background:#222;border:1px solid #444;color:#ccc;border-radius:3px;cursor:pointer;font-size:11px;">↑</button>
+        <button style="padding:1px 5px;background:#222;border:1px solid #444;color:#ccc;border-radius:3px;cursor:pointer;font-size:11px;" disabled>↓</button>
+        <button style="padding:1px 5px;background:#220000;border:1px solid #622;color:#f66;border-radius:3px;cursor:pointer;font-size:11px;">✕</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:6px;">
+      <input type="text" placeholder="Item name to add..." style="flex:1;padding:4px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;">
+      <button style="padding:4px 8px;border-radius:4px;border:1px solid #555;background:#333;color:#eee;cursor:pointer;font-size:12px;white-space:nowrap;">+ Add</button>
+    </div>
+  </details>
+</div>
+</template>
+
+<template id="tpl-mb">
+<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;box-sizing:border-box;width:100%;">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex:1 1 100%;">
+    <strong>🛒 Item Market Auto Buy</strong>
+  </div>
+  <div style="flex:1 1 100%;color:#f0a500;font-weight:bold;font-size:12px;background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:6px 10px;min-height:1.5em;font-variant-numeric:tabular-nums;">
+    🛒 <span style="color:#fff;">Jaguar Plushie</span> <span style="color:#555;font-size:11px;">[1/2] — next in <span style="color:#f0a500;">14s</span></span>
+  </div>
+  <span style="flex:1 1 100%;color:#8bd;font-size:12px;">1/2 Jaguar Plushie: bought 5 @ up to $2,500,000 (spent ~$12,317,500). Cash $108,432,200.</span>
+  <details open style="flex:1 1 100%;border-top:1px solid #333;padding-top:6px;">
+    <summary style="cursor:pointer;color:#aaa;font-size:12px;user-select:none;display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-weight:bold;">Watchlist <span style="font-weight:normal;color:#666;font-size:11px;">(2 items) — top = first bought</span></span>
+    </summary>
+    <div style="margin-top:6px;">
+      <div style="display:flex;align-items:center;gap:4px;padding:4px 0;border-bottom:1px solid #2a2a2a;font-size:12px;">
+        <span style="color:#555;font-size:10px;min-width:16px;text-align:right;">1.</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Jaguar Plushie</span>
+        <span style="color:#f0a500;font-size:11px;white-space:nowrap;">≤ $2,500,000</span>
+        <span style="font-size:10px;color:#888;white-space:nowrap;" title="5 bought of 28 target">5/28</span>
+        <button style="padding:1px 4px;background:#0a1a2a;border:1px solid #2a4a6a;color:#6af;border-radius:3px;cursor:pointer;font-size:10px;">↻</button>
+        <button style="padding:1px 5px;background:#1a1a0a;border:1px solid #554400;color:#aa8;border-radius:3px;cursor:pointer;font-size:11px;">⏸</button>
+        <button style="padding:1px 5px;background:#1a2a3a;border:1px solid #2a4a6a;color:#6af;border-radius:3px;cursor:pointer;font-size:11px;">✎</button>
+        <button style="padding:1px 5px;background:#222;border:1px solid #444;color:#ccc;border-radius:3px;cursor:pointer;font-size:11px;" disabled>↑</button>
+        <button style="padding:1px 5px;background:#222;border:1px solid #444;color:#ccc;border-radius:3px;cursor:pointer;font-size:11px;">↓</button>
+        <button style="padding:1px 5px;background:#220000;border:1px solid #622;color:#f66;border-radius:3px;cursor:pointer;font-size:11px;">✕</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:4px;padding:4px 0;border-bottom:1px solid #2a2a2a;font-size:12px;">
+        <span style="color:#555;font-size:10px;min-width:16px;text-align:right;">2.</span>
+        <span style="flex:1;">Samurai Mask</span>
+        <span style="color:#f0a500;font-size:11px;white-space:nowrap;">≤ $4,000,000</span>
+        <button style="padding:1px 5px;background:#1a1a0a;border:1px solid #554400;color:#aa8;border-radius:3px;cursor:pointer;font-size:11px;">⏸</button>
+        <button style="padding:1px 5px;background:#1a2a3a;border:1px solid #2a4a6a;color:#6af;border-radius:3px;cursor:pointer;font-size:11px;">✎</button>
+        <button style="padding:1px 5px;background:#222;border:1px solid #444;color:#ccc;border-radius:3px;cursor:pointer;font-size:11px;">↑</button>
+        <button style="padding:1px 5px;background:#222;border:1px solid #444;color:#ccc;border-radius:3px;cursor:pointer;font-size:11px;" disabled>↓</button>
+        <button style="padding:1px 5px;background:#220000;border:1px solid #622;color:#f66;border-radius:3px;cursor:pointer;font-size:11px;">✕</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center;">
+      <div style="flex:2;min-width:120px;position:relative;">
+        <input type="text" placeholder="Item name..." style="width:100%;padding:4px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;">
+      </div>
+      <input type="text" placeholder="Max price" style="flex:1;min-width:90px;padding:4px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;">
+      <input type="number" min="0" placeholder="Target qty" style="width:72px;padding:4px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;">
+      <button style="padding:4px 10px;border-radius:4px;border:1px solid #555;background:#333;color:#eee;cursor:pointer;font-size:12px;white-space:nowrap;">+ Add</button>
+    </div>
+    <div style="color:#555;font-size:10px;margin-top:4px;">Top item is bought first. ≤ = max price cap. Target qty = 0 means unlimited.</div>
+  </details>
+  <div style="flex:1 1 100%;display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;border-top:1px solid #333;padding-top:8px;">
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox" checked> Auto-buy</label>
+    <label style="display:flex;align-items:center;gap:6px;user-select:none;">Next item after: <input type="number" value="20" min="1" style="width:52px;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;text-align:center;"> s</label>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox" checked> Cloud sync <span style="font-size:10px;color:#555;">↻ 11s</span></label>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox"> Go Home</label>
+    <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Auto-buy stops automatically after this many hours. Set 0 to run indefinitely.">
+      Run for <input type="number" value="2" min="0" step="0.5" style="width:52px;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;text-align:center;"> h <span style="color:#555;font-size:11px;">(0 = ∞)</span>
+    </label>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <button style="padding:3px 8px;border-radius:4px;border:1px solid #2a4a6a;background:#0a1a2a;color:#6af;cursor:pointer;font-size:12px;">↺ Reset timer</button>
+      <span style="font-size:11px;color:#666;">1h 47m left</span>
+    </div>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;color:#f0a500;"><input type="checkbox"> Controller only</label>
+  </div>
+  <details style="flex:1 1 100%;border-top:1px solid #333;padding-top:8px;">
+    <summary style="cursor:pointer;color:#aaa;font-size:12px;user-select:none;display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-weight:bold;">🔍 Bazaar Sniper <span style="font-weight:normal;color:#666;font-size:11px;">(weav3r API)</span></span>
+    </summary>
+    <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px;">
+      <div style="color:#666;font-size:11px;line-height:1.4;">Polls weav3r.dev for bazaar listings. Navigates to the seller's bazaar and buys max affordable quantity when price hits target.</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox"> Enable Bazaar Sniper</label>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+        <label style="display:flex;align-items:center;gap:6px;user-select:none;">Poll every <input type="number" value="5" min="5" max="600" style="width:52px;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;text-align:center;"> s</label>
+        <label style="display:flex;align-items:center;gap:6px;user-select:none;">Max listing age <input type="number" value="15" min="1" max="60" style="width:42px;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;text-align:center;"> min</label>
+      </div>
+      <div style="color:#555;font-size:10px;">Requires a Torn API key (set via Tampermonkey menu) to resolve item names to IDs.</div>
+    </div>
+  </details>
+</div>
+</template>
+
+<template id="tpl-pv">
+<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;box-sizing:border-box;width:100%;">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex:1 1 100%;">
+    <strong>🏛 Vault Cash Manager</strong>
+  </div>
+  <div style="flex:1 1 100%;font-size:12px;color:#aaa;background:#111;border:1px solid #2a2a2a;border-radius:6px;padding:6px 10px;font-variant-numeric:tabular-nums;min-height:1em;">
+    Vault: <span style="color:#fff;font-weight:bold;">$450,000,000</span> &nbsp;·&nbsp; On hand: <span style="color:#fff;font-weight:bold;">$50,000,000</span> &nbsp;·&nbsp; Target: <span style="color:#f0a500;font-weight:bold;">$50,000,000</span> &nbsp;<span style="color:#22c55e;">✓ on target</span>
+  </div>
+  <div style="flex:1 1 100%;display:flex;gap:8px;flex-wrap:wrap;min-height:0;">
+    <span style="display:none;color:#ff6b6b;font-weight:bold;font-size:12px;background:#1a0000;border:1px solid #622;border-radius:4px;padding:3px 8px;white-space:nowrap;">⚠ Attack incoming — 2m 14s</span>
+    <span style="display:none;color:#f0a500;font-weight:bold;font-size:12px;background:#1a1000;border:1px solid #664400;border-radius:4px;padding:3px 8px;white-space:nowrap;">✈ Departing in 5m — auto-deposit queued</span>
+  </div>
+  <div style="flex:1 1 100%;display:flex;gap:12px;flex-wrap:wrap;align-items:center;border-top:1px solid #333;padding-top:8px;">
+    <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Keep this much cash on hand">
+      Target: <input type="text" value="50,000,000" style="width:110px;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;">
+    </label>
+    <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Only act when cash deviates from target by at least this percentage">
+      Threshold: <input type="number" value="5" min="0" max="100" step="0.5" style="width:58px;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;"> <span style="font-size:11px;color:#888;">%</span>
+    </label>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox" checked> Auto-maintain</label>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox" checked> Deposit on attack</label>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox" checked> Cloud sync</label>
+    <span style="font-size:11px;font-weight:bold;color:#22c55e;">✓</span>
+    <span style="font-size:10px;color:#555;">↻ 12s</span>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;margin-left:auto;color:#f0a500;"><input type="checkbox"> Controller only</label>
+  </div>
+  <div style="display:none;background:#2a1f00;border:1px solid #f0a500;border-radius:4px;padding:5px 10px;font-size:11px;color:#f0a500;text-align:center;margin-top:4px;">Controller Only Mode — automation is paused on this device</div>
+</div>
+</template>
+
+<!-- ─── Travel Predictor content (not a template — rendered directly in #ttp) ─── -->
+
+<script>
+// ─── Tab switching ───
+const tabs = document.querySelectorAll('.tb');
+const contents = document.querySelectorAll('.tc');
+tabs.forEach(btn => {
+  btn.addEventListener('click', () => {
+    tabs.forEach(t => t.classList.remove('active'));
+    contents.forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ─── Device mode toggle ───
+const dtBtns = document.querySelectorAll('.dt-btn');
+dtBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    dtBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.body.className = document.body.className.replace(/mode-\S+/g, '').trim();
+    if (btn.dataset.mode !== 'both') document.body.classList.add('mode-' + btn.dataset.mode);
+  });
+});
+
+// ─── Clone templates into desktop + mobile frames ───
+function cloneTemplate(templateId, targetId) {
+  const tpl = document.getElementById(templateId);
+  const target = document.getElementById(targetId);
+  if (tpl && target) target.appendChild(tpl.content.cloneNode(true));
+}
+cloneTemplate('tpl-fp', 'fp-panel-d');
+cloneTemplate('tpl-fp', 'fp-panel-m');
+cloneTemplate('tpl-mb', 'mb-panel-d');
+cloneTemplate('tpl-mb', 'mb-panel-m');
+cloneTemplate('tpl-pv', 'pv-panel-d');
+cloneTemplate('tpl-pv', 'pv-panel-m');
+
+// ─── Travel Predictor panel ───
+const ttpHtml = `
+<div class="hdr">
+  <span class="hdr-title"><span class="dot2"></span>Travel Predictor</span>
+  <button class="bcol">▲</button>
+</div>
+<div class="body">
+  <div class="rec">✅ Travel NOW — stock available on arrival</div>
+  <div class="conf">94% confidence · based on 12 restock cycles</div>
+  <div class="sec">
+    <div class="sec-hd">Current Stock · Jaguar Plushie (Mexico)</div>
+    <div class="row"><span class="lbl">Quantity</span><span class="val">2,317 units</span></div>
+    <div class="row"><span class="lbl">Cost</span><span class="val">$2,425,000</span></div>
+    <div class="row"><span class="lbl">Last Updated</span><span class="val">3 min ago</span></div>
+  </div>
+  <div class="sec">
+    <div class="sec-hd">Travel Plan</div>
+    <div class="row"><span class="lbl">Next Restock</span><span class="val">16:48 TCT</span></div>
+    <div class="row"><span class="lbl">Est. Sellout</span><span class="val">17:22 TCT</span></div>
+    <div class="row"><span class="lbl">Leave At</span><span class="val">16:20 TCT</span></div>
+    <div class="row"><span class="lbl">Arrive At</span><span class="val">16:52 TCT</span></div>
+    <div class="row"><span class="lbl">Stock at Arrival</span><span class="val">~1,850 units</span></div>
+  </div>
+  <div class="sec">
+    <div class="sec-hd">Statistics</div>
+    <div class="row"><span class="lbl">Avg Restock Interval</span><span class="val">4h 12m</span></div>
+    <div class="row"><span class="lbl">Avg Stock Lifetime</span><span class="val">38m</span></div>
+    <div class="row"><span class="lbl">Cycles Collected</span><span class="val">12</span></div>
+    <div class="row"><span class="lbl">Prediction Error</span><span class="val">±8m</span></div>
+  </div>
+</div>`;
+document.getElementById('ttp').innerHTML = ttpHtml;
+document.getElementById('ttp-m').innerHTML = ttpHtml;
+</script>
+</body>
+</html>
