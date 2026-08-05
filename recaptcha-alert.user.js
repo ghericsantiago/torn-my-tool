@@ -6,6 +6,9 @@
 // @author       Gheric
 // @match        https://www.torn.com/recaptcha.php*
 // @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
 // @connect      ntfy.sh
 // @run-at       document-idle
 // ==/UserScript==
@@ -14,7 +17,7 @@
   "use strict";
 
   var STORAGE_KEY = "recaptchaAlertInterval";
-  var NTFY_STORAGE_KEY = "recaptchaAlertNtfyTopic";
+  var NTFY_GM_KEY = "recaptchaAlertNtfyTopic";
   var DEFAULT_INTERVAL = 1400; // ms
 
   var audioCtx = null;
@@ -90,7 +93,7 @@
   }
 
   function sendPushNotification() {
-    var topic = localStorage.getItem(NTFY_STORAGE_KEY) || "";
+    var topic = GM_getValue(NTFY_GM_KEY, "");
     if (!topic || notificationSent) return;
     notificationSent = true;
     gmFetch("https://ntfy.sh/" + encodeURIComponent(topic), {
@@ -146,7 +149,7 @@
     var ntfyInput = document.createElement("input");
     ntfyInput.type = "text";
     ntfyInput.placeholder = "e.g. torn-alert-abc123";
-    ntfyInput.value = localStorage.getItem(NTFY_STORAGE_KEY) || "";
+    ntfyInput.value = GM_getValue(NTFY_GM_KEY, "");
     ntfyInput.style.cssText = [
       "flex:1",
       "min-width:120px",
@@ -157,7 +160,7 @@
     ].join(";");
 
     ntfyInput.addEventListener("change", function () {
-      localStorage.setItem(NTFY_STORAGE_KEY, ntfyInput.value.trim());
+      GM_setValue(NTFY_GM_KEY, ntfyInput.value.trim());
     });
 
     ntfyRow.appendChild(ntfyLabel);
@@ -298,4 +301,11 @@
   } else {
     init();
   }
+
+  GM_registerMenuCommand("Set ntfy Topic", function () {
+    var current = GM_getValue(NTFY_GM_KEY, "");
+    var topic = prompt("Enter your ntfy.sh topic:", current);
+    if (topic === null) return;
+    GM_setValue(NTFY_GM_KEY, topic.trim());
+  });
 })();
