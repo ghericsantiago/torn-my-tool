@@ -979,7 +979,7 @@
         let remainingSlots = purchaseInfo ? purchaseInfo.limit - purchaseInfo.purchased : Infinity;
 
         if (remainingSlots > 0) {
-          const rows = Array.from(stockTableWrapper.querySelectorAll('li > [class^="row___"]'));
+          const rows = Array.from(stockTableWrapper.querySelectorAll('li > [class*="row___"]'));
           const nameToRow = new Map();
           for (const r of rows) {
             const nc = r.querySelector('[data-tt-content-type="name"]');
@@ -1089,15 +1089,21 @@
         }
       }
 
-      // Fly home
-      console.log("[AutoFly2] Shopping done. Flying home...");
-      abroadLog("Shopping done — flying home", "info");
+      // Fly home (only if fly-back is enabled)
       scheduleCloudSave("autofly_log", _abroadLog.slice());
-      const travelHomeBtn = document.querySelector('[aria-controls="travel-home-panel"]');
-      safeClick(travelHomeBtn);
-      await delay(500);
-      const travelHomeConfirm = document.querySelector('#travel-home-panel button, [class*="confirmCancel"] button');
-      safeClick(travelHomeConfirm);
+      options = loadOptions();
+      if (options.flyBackEnabled) {
+        console.log("[AutoFly2] Shopping done. Flying home...");
+        abroadLog("Shopping done — flying home", "info");
+        const travelHomeBtn = document.querySelector('[aria-controls="travel-home-panel"]');
+        safeClick(travelHomeBtn);
+        await delay(500);
+        const travelHomeConfirm = document.querySelector('#travel-home-panel button, [class*="confirmCancel"] button');
+        safeClick(travelHomeConfirm);
+      } else {
+        console.log("[AutoFly2] Shopping done. Fly-back disabled — staying abroad.");
+        abroadLog("Shopping done — fly-back disabled, staying abroad", "info");
+      }
     } catch (e) {
       console.warn("[AutoFly2] processAbroadShopping error", e);
     }
@@ -1352,16 +1358,12 @@
       return;
     }
 
-    // Abroad (and not still traveling): rehab + shop and fly home
+    // Abroad (and not still traveling): rehab + shop, then fly home if flyBackEnabled
     if (isAbroad()) {
-      if (options.flyBackEnabled) {
-        const waiting = await scheduleReviveReloadIfHospitalized();
-        if (!waiting) {
-          if (options.autoRehabEnabled && isRehabPage()) await processRehab();
-          await processAbroadShopping();
-        }
-      } else {
-        console.log("[AutoFly2] Abroad, fly-back disabled");
+      const waiting = await scheduleReviveReloadIfHospitalized();
+      if (!waiting) {
+        if (options.autoRehabEnabled && isRehabPage()) await processRehab();
+        await processAbroadShopping();
       }
       return;
     }
