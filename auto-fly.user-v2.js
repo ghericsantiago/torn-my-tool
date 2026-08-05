@@ -63,7 +63,7 @@
 
   // =================== OPTIONS ===================
   function loadOptions() {
-    const DEFAULTS = { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5, gymEnabled: false, gymStat: "strength", holdIfNerveFull: false, autoRehabEnabled: false, minAddictionLevel: 1, goItemMarket: false };
+    const DEFAULTS = { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5, gymEnabled: false, gymStat: "strength", holdIfNerveFull: false, autoRehabEnabled: false, minAddictionLevel: 1, goItemMarket: false, waitUntilFull: false };
     try {
       const raw = JSON.parse(localStorage.getItem(OPTS_KEY) || "{}");
       const result = Object.assign({}, DEFAULTS);
@@ -292,6 +292,7 @@
       setChk("tm-af2-hold-nerve", options.holdIfNerveFull);
       setChk("tm-af2-rehab-enabled", options.autoRehabEnabled);
       setVal("tm-af2-min-addiction", options.minAddictionLevel ?? 1);
+      setChk("tm-af2-wait-full", options.waitUntilFull);
       setChk("tm-af2-go-item-market", options.goItemMarket);
       if (options.goItemMarket && !isControllerOnly() && !isAbroadOrTraveling()) {
         options.goItemMarket = false;
@@ -1089,6 +1090,29 @@
         }
       }
 
+      // If waitUntilFull is on and capacity isn't full yet, watch the stock table for changes
+      options = loadOptions();
+      if (options.waitUntilFull) {
+        const finalInfo = getPurchaseInfo();
+        if (finalInfo && finalInfo.purchased < finalInfo.limit) {
+          const remaining = finalInfo.limit - finalInfo.purchased;
+          abroadLog(`${finalInfo.purchased}/${finalInfo.limit} items — waiting for stock (${remaining} slots left)`, "info");
+          setPanelStatus(`Abroad: ${finalInfo.purchased}/${finalInfo.limit} items — waiting for stock…`, "#4db8ff");
+          scheduleCloudSave("autofly_log", _abroadLog.slice());
+          const watchTarget = stockTableWrapper || document.body;
+          let debounce = null;
+          const retryObs = new MutationObserver(() => {
+            if (debounce) return;
+            debounce = setTimeout(() => {
+              retryObs.disconnect();
+              if (isAbroad()) autoFlyCheck();
+            }, 1000);
+          });
+          retryObs.observe(watchTarget, { childList: true, subtree: true, characterData: true });
+          return;
+        }
+      }
+
       // Fly home (only if fly-back is enabled)
       scheduleCloudSave("autofly_log", _abroadLog.slice());
       options = loadOptions();
@@ -1701,6 +1725,9 @@
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
             <input id="tm-af2-fly-back" type="checkbox"> Fly back
           </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Stay abroad and retry every 30s until all purchase slots are filled before flying home">
+            <input id="tm-af2-wait-full" type="checkbox"> Wait until full
+          </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
             <input id="tm-af2-skip-warnings" type="checkbox"> Skip warnings
           </label>
@@ -1837,6 +1864,11 @@
       });
       flyBackEl && flyBackEl.addEventListener("change", () => {
         options.flyBackEnabled = !!flyBackEl.checked; saveOptions(options);
+      });
+      const waitFullEl = document.getElementById("tm-af2-wait-full");
+      waitFullEl && (waitFullEl.checked = !!options.waitUntilFull);
+      waitFullEl && waitFullEl.addEventListener("change", () => {
+        options.waitUntilFull = !!waitFullEl.checked; saveOptions(options);
       });
       skipEl && skipEl.addEventListener("change", () => {
         options.skipWarnings = !!skipEl.checked; saveOptions(options);
