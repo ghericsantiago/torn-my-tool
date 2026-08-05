@@ -296,6 +296,7 @@
   let itemStartTs = 0; // when we started dwelling on the current item (reset on buy)
   let advanceTimer = null; // interval that advances items after the no-buy timeout
   let tornItems = null; // cache of Torn API items: { id: { name, market_value, ... } }
+  let lastHospitalState = false;
 
   // -------------------------------------------------------------------------
   // Number helpers (reused from property-vault.user.js)
@@ -806,6 +807,7 @@
     if (!isItemMarketPage()) return;
     if (busy) return;
     if (_bazaarSnipeBusy) return; // sniper is navigating to a bazaar
+    if (isHospital()) return;
     if (isAutoBuyExpired()) {
       settings.enabled = false;
       saveSettings(settings);
@@ -957,6 +959,26 @@
   function checkDwell() {
     if (isControllerOnly()) return;
     if (!settings.enabled) return;
+
+    // Hospital detection — mirrors property-vault.user.js logic.
+    // Icon15 is Torn's hospitalized status icon; DOM check needs no API key.
+    if (isHospital()) {
+      if (!lastHospitalState) {
+        lastHospitalState = true;
+        console.log(LOG, "Hospitalized — auto-buy paused, waiting for revival.");
+        setStatus("Hospitalized — auto-buy paused. Will reload automatically when revived.");
+      }
+      updateHospitalBadge(true);
+      return;
+    }
+    if (lastHospitalState) {
+      lastHospitalState = false;
+      updateHospitalBadge(false);
+      console.log(LOG, "Hospital cleared — reloading to resume auto-buy.");
+      location.reload();
+      return;
+    }
+
     const list = settings.items || [];
     const timeoutMs = Math.max(1, Number(settings.noBuySeconds) || 20) * 1000;
     const remainingMs = Math.max(0, timeoutMs - (Date.now() - itemStartTs));
@@ -1020,6 +1042,18 @@
       clearInterval(advanceTimer);
       advanceTimer = null;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Hospital detection (DOM-based, no API key required)
+  // -------------------------------------------------------------------------
+  function isHospital() {
+    return !!document.querySelector('li[class*="icon15"]');
+  }
+
+  function updateHospitalBadge(visible) {
+    const el = document.getElementById("tm-imbuy-hospital-badge");
+    if (el) el.style.display = visible ? "" : "none";
   }
 
   // -------------------------------------------------------------------------
@@ -1808,6 +1842,9 @@
 
         <!-- Status line -->
         <span id="tm-imbuy-status" style="flex:1 1 100%;color:#8bd;font-size:12px;min-height:1em;"></span>
+
+        <!-- Hospital badge (hidden unless hospitalized) -->
+        <span id="tm-imbuy-hospital-badge" style="display:none;flex:1 1 100%;color:#f66;font-weight:bold;font-size:12px;background:#1a0000;border:1px solid #622;border-radius:4px;padding:5px 10px;text-align:center;">&#127973; Hospitalized — auto-buy paused. Will reload automatically when revived.</span>
 
         <!-- Watchlist -->
         <details id="tm-imbuy-items-toggle" open style="flex:1 1 100%;border-top:1px solid #333;padding-top:6px;">
