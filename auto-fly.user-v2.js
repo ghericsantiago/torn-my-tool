@@ -1717,8 +1717,8 @@
         <!-- Status line -->
         <span id="tm-af2-status" style="flex:1 1 100%;color:#f0a500;font-weight:bold;font-size:12px;display:none;"></span>
 
-        <!-- Options -->
-        <div style="flex:1 1 100%;display:flex;gap:12px;flex-wrap:wrap;align-items:center;border-top:1px solid #333;padding-top:8px;">
+        <!-- Options grid (3 cols desktop / 2 cols mobile) -->
+        <div style="flex:1 1 100%;display:grid;grid-template-columns:${isMobile() ? '1fr 1fr' : '1fr 1fr 1fr'};gap:8px 16px;border-top:1px solid #333;padding-top:8px;">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
             <input id="tm-af2-auto-enabled" type="checkbox"> Auto-fly
           </label>
@@ -1742,10 +1742,10 @@
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Poll the Gist cloud every second to sync settings across devices. Disable to reduce GitHub API usage.">
             <input id="tm-af2-cloud-poll" type="checkbox"> Cloud sync
+            <span id="tm-af2-cloud-status" style="font-size:11px;font-weight:bold;min-width:14px;text-align:center;"></span>
+            <span id="tm-af2-cloud-next" style="font-size:10px;color:#555;font-variant-numeric:tabular-nums;"></span>
           </label>
-          <span id="tm-af2-cloud-status" style="font-size:11px;font-weight:bold;min-width:14px;text-align:center;"></span>
-          <span id="tm-af2-cloud-next" style="font-size:10px;color:#555;font-variant-numeric:tabular-nums;"></span>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;margin-left:auto;color:#f0a500;" title="View and control settings from this device without running automation. Safe for phone use.">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;color:#f0a500;" title="View and control settings from this device without running automation. Safe for phone use.">
             <input id="tm-af2-controller-only" type="checkbox"> Controller only
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;color:#44cc88;" title="Remote command: when checked on controller phone, the automation device navigates to the Item Market (only fires when at Torn home, not abroad)">

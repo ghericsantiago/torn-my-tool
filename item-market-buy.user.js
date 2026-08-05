@@ -1830,8 +1830,8 @@
           <div style="color:#555;font-size:10px;margin-top:4px;">Top item is bought first. &#8804; = max price cap. Blank price uses market value. Target qty = 0 means unlimited.</div>
         </details>
 
-        <!-- Options grid (2 columns) -->
-        <div style="flex:1 1 100%;display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;border-top:1px solid #333;padding-top:8px;">
+        <!-- Options grid (3 cols desktop / 2 cols mobile) -->
+        <div style="flex:1 1 100%;display:grid;grid-template-columns:${isMobile() ? '1fr 1fr' : '1fr 1fr 1fr'};gap:8px 16px;border-top:1px solid #333;padding-top:8px;">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
             <input id="tm-imbuy-enabled" type="checkbox"> Auto-buy
           </label>
