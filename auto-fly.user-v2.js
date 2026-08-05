@@ -63,7 +63,7 @@
 
   // =================== OPTIONS ===================
   function loadOptions() {
-    const DEFAULTS = { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5, gymEnabled: false, gymStat: "strength", holdIfNerveFull: false, autoRehabEnabled: false, minAddictionLevel: 1, goItemMarket: false, waitUntilFull: false };
+    const DEFAULTS = { skipWarnings: false, flyBackEnabled: true, autoEnabled: false, repeatPlan: false, preflyDelay: 5, gymEnabled: false, gymStat: "strength", holdIfNerveFull: false, autoRehabEnabled: false, minAddictionLevel: 0, goItemMarket: false, waitUntilFull: false };
     try {
       const raw = JSON.parse(localStorage.getItem(OPTS_KEY) || "{}");
       const result = Object.assign({}, DEFAULTS);
@@ -291,7 +291,7 @@
       setVal("tm-af2-gym-stat", options.gymStat || "strength");
       setChk("tm-af2-hold-nerve", options.holdIfNerveFull);
       setChk("tm-af2-rehab-enabled", options.autoRehabEnabled);
-      setVal("tm-af2-min-addiction", options.minAddictionLevel ?? 1);
+      setVal("tm-af2-min-addiction", options.minAddictionLevel ?? 0);
       setChk("tm-af2-wait-full", options.waitUntilFull);
       setChk("tm-af2-go-item-market", options.goItemMarket);
       if (options.goItemMarket && !isControllerOnly() && !isAbroadOrTraveling()) {
@@ -1277,9 +1277,15 @@
 
   async function getAddictionLevelFromAPI() {
     try {
-      const data = await apiRequest("user", "profile");
-      if (data.drugs && typeof data.drugs.addiction_level === "number") return data.drugs.addiction_level;
-      if (typeof data.addiction_level === "number") return data.addiction_level;
+      const data = await apiRequest("user", "icons");
+      const icons = data.icons || {};
+      // icon57=1-4%, icon58=5-9%, icon59=10-19%, icon60=20-29%, icon61=30%+
+      if (icons.icon61) return 5;
+      if (icons.icon60) return 4;
+      if (icons.icon59) return 3;
+      if (icons.icon58) return 2;
+      if (icons.icon57) return 1;
+      return 0;
     } catch (e) { console.warn("[AutoFly2] Addiction API failed", e); }
     return -1;
   }
@@ -1826,11 +1832,16 @@
               <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Auto-travel to Switzerland and rehab before shopping when addiction exceeds the threshold. Also rehabbing in Switzerland before shopping when already there.">
                 <input id="tm-af2-rehab-enabled" type="checkbox"> Auto-Rehab &#x1F489; (Switzerland)
               </label>
-              <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Rehab triggers only when addiction level is strictly above this value (1–4)">
-                Min addiction:
-                <input id="tm-af2-min-addiction" type="number" min="1" max="4" step="1"
-                  style="width:40px;padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;text-align:center;">
-                <span style="color:#666;font-size:10px;">(rehabs when &gt; this)</span>
+              <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Fly to Switzerland and rehab when stat penalty reaches this level or worse.">
+                Rehab at:
+                <select id="tm-af2-min-addiction"
+                  style="padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;">
+                  <option value="0">Any (-1%+)</option>
+                  <option value="1">Moderate (-5%+)</option>
+                  <option value="2">Heavy (-10%+)</option>
+                  <option value="3">Severe (-20%+)</option>
+                  <option value="4">Extreme (-30%+)</option>
+                </select>
               </label>
             </div>
           </div>
@@ -1963,11 +1974,9 @@
     }
     const minAddictionEl = document.getElementById("tm-af2-min-addiction");
     if (minAddictionEl) {
-      minAddictionEl.value = String(options.minAddictionLevel ?? 1);
+      minAddictionEl.value = String(options.minAddictionLevel ?? 0);
       minAddictionEl.addEventListener("change", () => {
-        const v = Math.max(1, Math.min(4, parseInt(minAddictionEl.value, 10) || 1));
-        minAddictionEl.value = String(v);
-        options.minAddictionLevel = v;
+        options.minAddictionLevel = parseInt(minAddictionEl.value, 10) || 0;
         saveOptions(options);
       });
     }
