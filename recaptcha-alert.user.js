@@ -5,6 +5,7 @@
 // @description  Plays a looping alarm sound and sends a phone push notification when Torn's recaptcha page appears
 // @author       Gheric
 // @match        https://www.torn.com/recaptcha.php*
+// @match        https://www.torn.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -296,10 +297,12 @@
     });
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
-    init();
+  if (/\/recaptcha\.php/i.test(location.pathname)) {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", init);
+    } else {
+      init();
+    }
   }
 
   GM_registerMenuCommand("Set ntfy Topic", function () {
