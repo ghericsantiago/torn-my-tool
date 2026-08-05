@@ -1203,18 +1203,19 @@
       await wait(1000); location.href = "/page.php?sid=travel"; return;
     }
 
-    // Set the training count input
+    // Set the training count input — always use 20 to max out the session
     const trainInput = statLi.querySelector('input[class*="input"]');
     if (trainInput) {
-      trainInput.focus && trainInput.focus();
-      trainInput.value = String(maxTrains);
+      const nativeSet = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+      nativeSet.call(trainInput, "20");
       trainInput.dispatchEvent(new Event("input", { bubbles: true }));
       trainInput.dispatchEvent(new Event("change", { bubbles: true }));
-      trainInput.blur && trainInput.blur();
     }
     await wait(300);
 
     safeClick(trainBtn);
+    // Mark training time so checkAndGoToGym skips while the API energy is still stale
+    sessionStorage.setItem("tmGymTrainedAt", String(Date.now()));
     console.log(`[AutoFly2] Gym: clicked TRAIN ${stat} x${maxTrains} (${maxTrains * costPerTrain} energy)`);
     setPanelStatus(`Gym: trained ${stat} ×${maxTrains} — going home…`, "#44cc88");
 
@@ -1225,6 +1226,20 @@
   async function checkAndGoToGym() {
     options = loadOptions();
     if (!options.gymEnabled) return false;
+    // Guard 1: prevent re-entry after a failed gym visit (DOM couldn't parse energy,
+    // training never fired, but API still reports full energy)
+    if (sessionStorage.getItem("tmGymJustVisited")) {
+      sessionStorage.removeItem("tmGymJustVisited");
+      console.log("[AutoFly2] Gym: just visited — skipping re-entry to prevent loop");
+      return false;
+    }
+    // Guard 2: prevent re-entry while API energy is stale after a successful training
+    const lastTrain = parseInt(sessionStorage.getItem("tmGymTrainedAt") || "0", 10);
+    if (lastTrain && Date.now() - lastTrain < 3 * 60 * 1000) {
+      console.log("[AutoFly2] Gym: trained recently — API energy may be stale, skipping");
+      return false;
+    }
+    if (lastTrain) sessionStorage.removeItem("tmGymTrainedAt");
     let energy;
     try { energy = await getEnergyStatus(); }
     catch (e) { console.warn("[AutoFly2] Energy check failed", e); return false; }
@@ -1235,6 +1250,7 @@
     console.log("[AutoFly2] Energy full — navigating to gym");
     setPanelStatus("Energy full — going to gym…", "#44cc88");
     await wait(500);
+    sessionStorage.setItem("tmGymJustVisited", "1");
     location.href = "/gym.php";
     return true;
   }
