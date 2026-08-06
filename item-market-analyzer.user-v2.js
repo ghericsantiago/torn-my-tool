@@ -36,6 +36,7 @@
   let sortState        = { col: null, dir: 'asc' };
   let awaitingSell     = false;
   let bestLoaded       = false;
+  let calcAutoOpen     = true;
 
   // ── Google Fonts ───────────────────────────────────────────────────────────
   const _link = document.createElement('link');
@@ -618,6 +619,10 @@
           <div style="margin-top:16px">
             <button class="ima-btn ghost" id="ima-c-reset" style="width:100%;justify-content:center">Reset</button>
           </div>
+          <div style="margin-top:10px;display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid var(--ima-border)">
+            <span style="font-family:var(--ima-mono);font-size:9px;color:var(--ima-muted);text-transform:uppercase;letter-spacing:0.1em">Auto-open on fill</span>
+            <button id="ima-calc-auto-open" class="ima-btn ghost active-toggle" style="height:24px;padding:0 10px;font-size:10px">On</button>
+          </div>
         </div>
       </div>
     `;
@@ -638,6 +643,11 @@
       this.classList.toggle('active-toggle', open);
     });
     panel.querySelector('#ima-c-reset')     .addEventListener('click', resetCalculator);
+    panel.querySelector('#ima-calc-auto-open').addEventListener('click', function () {
+      calcAutoOpen = !calcAutoOpen;
+      this.textContent = calcAutoOpen ? 'On' : 'Off';
+      this.classList.toggle('active-toggle', calcAutoOpen);
+    });
     panel.querySelector('#ima-best-btn')    .addEventListener('click', toggleBestDrawer);
     panel.querySelector('#ima-best-close')  .addEventListener('click', toggleBestDrawer);
     panel.querySelector('#ima-calc-btn')    .addEventListener('click', toggleCalcDrawer);
@@ -953,11 +963,13 @@
       sellEl.value  = '';
       awaitingSell  = true;
       stateEl.textContent = 'Buy set — click again to set Sell';
-      if (!document.getElementById('ima-calc-drawer').classList.contains('visible')) toggleCalcDrawer();
     } else {
       sellEl.value  = price;
       awaitingSell  = false;
       stateEl.textContent = '';
+      if (calcAutoOpen && !document.getElementById('ima-calc-drawer').classList.contains('visible')) {
+        toggleCalcDrawer();
+      }
     }
     calcResults();
   }
