@@ -8,7 +8,7 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{background:#0d0d0d;color:#eee;font-family:Arial,Helvetica,sans-serif;font-size:14px;min-height:100vh}
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#111}::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
-#fp-panel-m .fp-opts-d,#mb-panel-m .mb-opts-d{grid-template-columns:1fr 1fr!important}
+#fp-panel-m .fp-opts-d{grid-template-columns:1fr 1fr!important}
 details>summary{list-style:none}details>summary::-webkit-details-marker{display:none}
 input[type=checkbox]{accent-color:#f0a500;cursor:pointer}
 input[type=number]{-moz-appearance:textfield}input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none}
@@ -542,18 +542,26 @@ body.mode-mobile  .preview-col.desktop-col{display:none}
     </div>
   </div>
   <span style="flex:1 1 100%;color:#f0a500;font-weight:bold;font-size:12px;">Abroad — Mexico | Shopping in progress…</span>
-  <div class="fp-opts-d" style="flex:1 1 100%;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px 16px;border-top:1px solid #333;padding-top:8px;">
-    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox" checked> Auto-fly</label>
-    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox" checked> Fly back</label>
-    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox"> Wait until full</label>
-    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox"> Skip warnings</label>
-    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox"> Loop plan ↺</label>
-    <label style="display:flex;align-items:center;gap:6px;user-select:none;">Delay: <input type="number" value="3" min="0" max="120" style="width:44px;padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;text-align:center;"> s</label>
-    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox" checked> Cloud sync <span style="font-size:11px;font-weight:bold;color:#22c55e;">✓</span> <span style="font-size:10px;color:#555;">↻ 8s</span></label>
-    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;color:#f0a500;"><input type="checkbox"> Controller only</label>
-    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;color:#44cc88;"><input type="checkbox"> Go Item Market</label>
-  </div>
-  <div style="display:none;flex:1 1 100%;background:#2a1f00;border:1px solid #f0a500;border-radius:4px;padding:5px 10px;font-size:11px;color:#f0a500;text-align:center;">Controller Only Mode — automation is paused on this device</div>
+  <details open style="flex:1 1 100%;border-top:1px solid #333;padding-top:6px;">
+    <summary style="cursor:pointer;color:#aaa;font-size:12px;user-select:none;font-weight:bold;">Settings ⚙️</summary>
+    <div class="fp-opts-d" style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px 16px;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Enable fully automated flight plan execution"><input type="checkbox" checked> Auto-fly</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Automatically fly back home after shopping abroad"><input type="checkbox" checked> Fly back</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Stay abroad and retry until all purchase slots are filled"><input type="checkbox"> Wait until full</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Skip the travel confirmation dialog — clicks Continue automatically"><input type="checkbox"> Skip warnings</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="When all flights are done, reset the whole plan and start over automatically"><input type="checkbox"> Loop plan ↺</label>
+      <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Seconds to wait on the travel page before clicking Travel — use this to withdraw money first">Delay: <input type="number" value="3" min="0" max="120" style="width:44px;padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;text-align:center;"> s</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Sync settings across devices via cloud every 15s. Disable to reduce API usage."><input type="checkbox" checked> Cloud sync <span style="font-size:11px;font-weight:bold;color:#22c55e;">✓</span> <span style="font-size:10px;color:#555;">↻ 8s</span></label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;color:#f0a500;" title="View and control settings from this device without running automation. Safe for phone use."><input type="checkbox"> Controller only</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;color:#44cc88;" title="Remote command: navigates the automation device to the Item Market"><input type="checkbox"> Go Item Market</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Go to the gym and train when energy is full before each flight"><input type="checkbox"> Auto-Gym 🏋</label>
+      <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Which stat to train when Auto-Gym runs">Gym stat: <select style="padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;"><option>Strength</option><option>Defense</option><option>Speed</option><option>Dexterity</option></select></label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Hold the next flight if your nerve bar is full — waits until nerve is spent before departing"><input type="checkbox"> Hold if nerve full ⚡</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Auto-fly to Switzerland for rehab when drug addiction exceeds the threshold below"><input type="checkbox"> Auto-Rehab 💉</label>
+      <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Fly to Switzerland and rehab when stat penalty reaches this level or worse">Rehab at: <select style="padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;"><option>Any (-1%+)</option><option selected>Moderate (-5%+)</option><option>Heavy (-10%+)</option><option>Severe (-20%+)</option><option>Extreme (-30%+)</option></select></label>
+    </div>
+    <div style="display:none;margin-top:8px;background:#2a1f00;border:1px solid #f0a500;border-radius:4px;padding:5px 10px;font-size:11px;color:#f0a500;text-align:center;">Controller Only Mode — automation is paused on this device</div>
+  </details>
   <details open style="flex:1 1 100%;border-top:1px solid #333;padding-top:6px;">
     <summary style="cursor:pointer;color:#aaa;font-size:12px;user-select:none;display:flex;justify-content:space-between;align-items:center;">
       <span style="font-weight:bold;">Flight Plan <span style="font-weight:normal;color:#666;font-size:11px;">(sorted by departure time)</span></span>
@@ -583,25 +591,6 @@ body.mode-mobile  .preview-col.desktop-col{display:none}
       <button style="padding:4px 10px;border-radius:4px;border:1px solid #555;background:#333;color:#eee;cursor:pointer;font-size:12px;white-space:nowrap;">+ Add Flight</button>
     </div>
     <div style="color:#555;font-size:10px;margin-top:4px;">Time is optional (TCT/UTC). ASAP = no time set. ● = ready. ✈ = flying. ✓ = done. ★ = priority product.</div>
-  </details>
-  <details style="flex:1 1 100%;border-top:1px solid #333;padding-top:6px;">
-    <summary style="cursor:pointer;color:#aaa;font-size:12px;user-select:none;font-weight:bold;">Automation ⚙️</summary>
-    <div style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;">
-      <div style="display:flex;flex-direction:column;gap:6px;">
-        <span style="color:#666;font-size:10px;text-transform:uppercase;letter-spacing:.05em;">Gym</span>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox"> Auto-Gym 🏋 (trains before flying when energy is full)</label>
-        <label style="display:flex;align-items:center;gap:6px;user-select:none;">Stat: <select style="padding:2px 6px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;"><option>Strength</option><option>Defense</option><option>Speed</option><option>Dexterity</option></select></label>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:6px;border-left:1px solid #333;padding-left:12px;">
-        <span style="color:#666;font-size:10px;text-transform:uppercase;letter-spacing:.05em;">Nerve</span>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox"> Hold flight if nerve full ⚡</label>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:6px;border-left:1px solid #333;padding-left:12px;">
-        <span style="color:#666;font-size:10px;text-transform:uppercase;letter-spacing:.05em;">Rehab</span>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox"> Auto-Rehab 💉 (Switzerland)</label>
-        <label style="display:flex;align-items:center;gap:6px;user-select:none;">Min addiction: <input type="number" value="2" min="1" max="4" style="width:40px;padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;text-align:center;"> <span style="color:#666;font-size:10px;">(rehabs when &gt; this)</span></label>
-      </div>
-    </div>
   </details>
   <details style="flex:1 1 100%;border-top:1px solid #333;padding-top:6px;">
     <summary style="cursor:pointer;color:#aaa;font-size:12px;user-select:none;font-weight:bold;">Shopping List (2 items) — top = first bought</summary>
@@ -678,10 +667,10 @@ body.mode-mobile  .preview-col.desktop-col{display:none}
     </div>
     <div style="color:#555;font-size:10px;margin-top:4px;">Top item is bought first. ≤ = max price cap. Target qty = 0 means unlimited.</div>
   </details>
-  <div class="mb-opts-d" style="flex:1 1 100%;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px 16px;border-top:1px solid #333;padding-top:8px;">
+  <div class="mb-opts-d" style="flex:1 1 100%;display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;border-top:1px solid #333;padding-top:8px;">
     <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox" checked> Auto-buy</label>
     <label style="display:flex;align-items:center;gap:6px;user-select:none;">Next item after: <input type="number" value="20" min="1" style="width:52px;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;text-align:center;"> s</label>
-    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox" checked> Cloud sync <span style="font-size:10px;color:#555;">↻ 11s</span></label>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox" checked> Cloud sync <span style="font-size:11px;font-weight:bold;color:#44cc88;">✓</span> <span style="font-size:10px;color:#555;">↻ 11s</span></label>
     <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;"><input type="checkbox"> Go Home</label>
     <label style="display:flex;align-items:center;gap:6px;user-select:none;">
       Run for <input type="number" value="2" min="0" step="0.5" style="width:52px;padding:3px 6px;border-radius:4px;border:1px solid #555;background:#111;color:#eee;font-size:12px;box-sizing:border-box;text-align:center;"> h <span style="color:#555;font-size:11px;">(0 = ∞)</span>

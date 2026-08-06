@@ -153,14 +153,39 @@
     el.textContent = secs <= 0 ? "↻ …" : `↻ ${secs}s`;
   }
 
+  let _cloudStatusClearTimer = null;
+  function setCloudSaveStatus(state) {
+    const el = document.getElementById("tm-imbuy-cloud-status");
+    if (!el) return;
+    if (_cloudStatusClearTimer) { clearTimeout(_cloudStatusClearTimer); _cloudStatusClearTimer = null; }
+    if (state === "pending") {
+      el.textContent = "⏳"; el.title = "Save queued…"; el.style.color = "#f0a500";
+    } else if (state === "saving") {
+      el.textContent = "↑"; el.title = "Saving to cloud…"; el.style.color = "#f0a500";
+    } else if (state === "saved") {
+      el.textContent = "✓"; el.title = "Saved to cloud"; el.style.color = "#44cc88";
+      _cloudStatusClearTimer = setTimeout(() => {
+        const e2 = document.getElementById("tm-imbuy-cloud-status");
+        if (e2) { e2.textContent = ""; e2.title = ""; }
+        _cloudStatusClearTimer = null;
+      }, 3000);
+    } else if (state === "error") {
+      el.textContent = "✗"; el.title = "Save failed — check console"; el.style.color = "#f66";
+    } else {
+      el.textContent = ""; el.title = "";
+    }
+  }
+
   function scheduleCloudSave(section, data) {
     _cloudSavePending[section] = JSON.parse(JSON.stringify(data));
     if (_cloudSaveTimer) clearTimeout(_cloudSaveTimer);
+    setCloudSaveStatus("pending");
     _cloudSaveTimer = setTimeout(async () => {
       const pending = Object.assign({}, _cloudSavePending);
       _cloudSavePending = {};
       _cloudSaveTimer = null;
       _cloudSaveInProgress = true;
+      setCloudSaveStatus("saving");
       try {
         let all = {};
         try { all = JSON.parse(_lastCloudContent || "{}"); } catch(e) {}
@@ -173,15 +198,18 @@
         if (!res.ok) {
           Object.assign(_cloudSavePending, pending);
           _cloudSaveInProgress = false;
+          setCloudSaveStatus("error");
           console.error(LOG, `Cloud save failed — HTTP ${res.status} (data preserved for retry)`);
           return;
         }
         _lastCloudContent = JSON.stringify(all);
         _cloudSaveInProgress = false;
+        setCloudSaveStatus("saved");
         console.log(LOG, "Cloud settings saved");
       } catch(e) {
         Object.assign(_cloudSavePending, pending);
         _cloudSaveInProgress = false;
+        setCloudSaveStatus("error");
         console.warn(LOG, "Cloud save failed:", e);
       }
     }, 1500);
@@ -1867,8 +1895,8 @@
           <div style="color:#555;font-size:10px;margin-top:4px;">Top item is bought first. &#8804; = max price cap. Blank price uses market value. Target qty = 0 means unlimited.</div>
         </details>
 
-        <!-- Options grid (3 cols desktop / 2 cols mobile) -->
-        <div style="flex:1 1 100%;display:grid;grid-template-columns:${isMobile() ? '1fr 1fr' : '1fr 1fr 1fr'};gap:8px 16px;border-top:1px solid #333;padding-top:8px;">
+        <!-- Options grid (2 cols desktop / 2 cols mobile) -->
+        <div style="flex:1 1 100%;display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;border-top:1px solid #333;padding-top:8px;">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
             <input id="tm-imbuy-enabled" type="checkbox"> Auto-buy
           </label>
@@ -1880,6 +1908,7 @@
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Poll cloud every 15s to sync settings across devices.">
             <input id="tm-imbuy-cloud-poll" type="checkbox"> Cloud sync
+            <span id="tm-imbuy-cloud-status" style="font-size:11px;font-weight:bold;min-width:14px;text-align:center;"></span>
             <span id="tm-imbuy-cloud-next" style="font-size:10px;color:#555;font-variant-numeric:tabular-nums;"></span>
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="When checked, the automation device navigates to the Torn home page. Syncs via cloud — check this from your phone to send it home.">

@@ -1739,44 +1739,76 @@
         <!-- Status line -->
         <span id="tm-af2-status" style="flex:1 1 100%;color:#f0a500;font-weight:bold;font-size:12px;display:none;"></span>
 
-        <!-- Options grid (3 cols desktop / 2 cols mobile) -->
-        <div style="flex:1 1 100%;display:grid;grid-template-columns:${isMobile() ? '1fr 1fr' : '1fr 1fr 1fr'};gap:8px 16px;border-top:1px solid #333;padding-top:8px;">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
-            <input id="tm-af2-auto-enabled" type="checkbox"> Auto-fly
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
-            <input id="tm-af2-fly-back" type="checkbox"> Fly back
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Stay abroad and watch for stock changes — retries instantly when the store updates, until all purchase slots are filled">
-            <input id="tm-af2-wait-full" type="checkbox"> Wait until full
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
-            <input id="tm-af2-skip-warnings" type="checkbox"> Skip warnings
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="When all flights are done, reset the whole plan and start over automatically">
-            <input id="tm-af2-repeat-plan" type="checkbox"> Loop plan &#x21ba;
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Seconds to wait on the travel page before clicking Travel — use this to withdraw money first">
-            Delay:
-            <input id="tm-af2-prefly-delay" type="number" min="0" max="120" step="1"
-              style="width:44px;padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;text-align:center;">
-            s
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Poll the Gist cloud every second to sync settings across devices. Disable to reduce GitHub API usage.">
-            <input id="tm-af2-cloud-poll" type="checkbox"> Cloud sync
-            <span id="tm-af2-cloud-status" style="font-size:11px;font-weight:bold;min-width:14px;text-align:center;"></span>
-            <span id="tm-af2-cloud-next" style="font-size:10px;color:#555;font-variant-numeric:tabular-nums;"></span>
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;color:#f0a500;" title="View and control settings from this device without running automation. Safe for phone use.">
-            <input id="tm-af2-controller-only" type="checkbox"> Controller only
-          </label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;color:#44cc88;" title="Remote command: when checked on controller phone, the automation device navigates to the Item Market (only fires when at Torn home, not abroad)">
-            <input id="tm-af2-go-item-market" type="checkbox"> Go Item Market
-          </label>
-        </div>
-        <div id="tm-af2-controller-banner" style="display:none;flex:1 1 100%;background:#2a1f00;border:1px solid #f0a500;border-radius:4px;padding:5px 10px;font-size:11px;color:#f0a500;text-align:center;">
-          Controller Only Mode — automation is paused on this device
-        </div>
+        <!-- Settings -->
+        <details id="tm-af2-settings-toggle" open style="flex:1 1 100%;border-top:1px solid #333;padding-top:6px;">
+          <summary style="cursor:pointer;color:#aaa;font-size:12px;user-select:none;list-style:none;font-weight:bold;">Settings &#x2699;&#xFE0F;</summary>
+
+          <div style="margin-top:8px;display:grid;grid-template-columns:${isMobile() ? '1fr 1fr' : '1fr 1fr 1fr'};gap:8px 16px;">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Enable fully automated flight plan execution">
+              <input id="tm-af2-auto-enabled" type="checkbox"> Auto-fly
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Automatically fly back home after shopping abroad">
+              <input id="tm-af2-fly-back" type="checkbox"> Fly back
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Stay abroad and retry until all purchase slots are filled — watches the stock table for changes">
+              <input id="tm-af2-wait-full" type="checkbox"> Wait until full
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Skip the travel confirmation dialog — clicks Continue automatically">
+              <input id="tm-af2-skip-warnings" type="checkbox"> Skip warnings
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="When all flights are done, reset the whole plan and start over automatically">
+              <input id="tm-af2-repeat-plan" type="checkbox"> Loop plan &#x21ba;
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Seconds to wait on the travel page before clicking Travel — use this to withdraw money first">
+              Delay:
+              <input id="tm-af2-prefly-delay" type="number" min="0" max="120" step="1"
+                style="width:44px;padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;text-align:center;">
+              s
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Sync settings across devices via cloud every 15s. Disable to reduce API usage.">
+              <input id="tm-af2-cloud-poll" type="checkbox"> Cloud sync
+              <span id="tm-af2-cloud-status" style="font-size:11px;font-weight:bold;min-width:14px;text-align:center;"></span>
+              <span id="tm-af2-cloud-next" style="font-size:10px;color:#555;font-variant-numeric:tabular-nums;"></span>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;color:#f0a500;" title="View and control settings from this device without running automation. Safe for phone use.">
+              <input id="tm-af2-controller-only" type="checkbox"> Controller only
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;color:#44cc88;" title="Remote command: when checked on controller phone, the automation device navigates to the Item Market (only fires when at Torn home, not abroad)">
+              <input id="tm-af2-go-item-market" type="checkbox"> Go Item Market
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Go to the gym and train when energy is full before each flight">
+              <input id="tm-af2-gym-enabled" type="checkbox"> Auto-Gym &#x1F3CB;
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Which stat to train when Auto-Gym runs">
+              Gym stat:
+              <select id="tm-af2-gym-stat" style="padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;">
+                <option value="strength">Strength</option>
+                <option value="defense">Defense</option>
+                <option value="speed">Speed</option>
+                <option value="dexterity">Dexterity</option>
+              </select>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Hold the next flight if your nerve bar is full — waits until nerve is spent before departing">
+              <input id="tm-af2-hold-nerve" type="checkbox"> Hold if nerve full &#x26A1;
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Auto-fly to Switzerland for rehab when drug addiction exceeds the threshold below">
+              <input id="tm-af2-rehab-enabled" type="checkbox"> Auto-Rehab &#x1F489;
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Fly to Switzerland and rehab when stat penalty reaches this level or worse">
+              Rehab at:
+              <select id="tm-af2-min-addiction" style="padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;">
+                <option value="0">Any (-1%+)</option>
+                <option value="1">Moderate (-5%+)</option>
+                <option value="2">Heavy (-10%+)</option>
+                <option value="3">Severe (-20%+)</option>
+                <option value="4">Extreme (-30%+)</option>
+              </select>
+            </label>
+          </div>
+          <div id="tm-af2-controller-banner" style="display:none;margin-top:8px;background:#2a1f00;border:1px solid #f0a500;border-radius:4px;padding:5px 10px;font-size:11px;color:#f0a500;text-align:center;">
+            Controller Only Mode — automation is paused on this device
+          </div>
+        </details>
 
         <!-- Flight Plan -->
         <details id="tm-af2-plan-toggle" open style="flex:1 1 100%;border-top:1px solid #333;padding-top:6px;">
@@ -1800,51 +1832,6 @@
             <button id="tm-af2-add-flight" style="padding:4px 10px;border-radius:4px;border:1px solid #555;background:#333;color:#eee;cursor:pointer;font-size:12px;white-space:nowrap;">+ Add Flight</button>
           </div>
           <div style="color:#555;font-size:10px;margin-top:4px;">Time is optional (TCT/UTC). ASAP = no time set, flies when ready. ● = ready. ✈ = flying. ✓ = done. &#x21bb; = loop. ★ = priority product.</div>
-        </details>
-
-        <!-- Automation -->
-        <details id="tm-af2-gym-toggle" style="flex:1 1 100%;border-top:1px solid #333;padding-top:6px;">
-          <summary style="cursor:pointer;color:#aaa;font-size:12px;user-select:none;list-style:none;font-weight:bold;">Automation &#x2699;&#xFE0F;</summary>
-          <div style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;">
-            <div style="display:flex;flex-direction:column;gap:6px;">
-              <span style="color:#666;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;">Gym</span>
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Automatically go to gym and train when energy is full, before flying">
-                <input id="tm-af2-gym-enabled" type="checkbox"> Auto-Gym &#x1F3CB; (trains before flying when energy is full)
-              </label>
-              <label style="display:flex;align-items:center;gap:6px;user-select:none;">
-                Stat:
-                <select id="tm-af2-gym-stat" style="padding:2px 6px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;">
-                  <option value="strength">Strength</option>
-                  <option value="defense">Defense</option>
-                  <option value="speed">Speed</option>
-                  <option value="dexterity">Dexterity</option>
-                </select>
-              </label>
-            </div>
-            <div style="display:flex;flex-direction:column;gap:6px;border-left:1px solid #333;padding-left:12px;">
-              <span style="color:#666;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;">Nerve</span>
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Hold the next flight if your nerve bar is full — waits until nerve is spent before departing">
-                <input id="tm-af2-hold-nerve" type="checkbox"> Hold flight if nerve full &#x26A1;
-              </label>
-            </div>
-            <div style="display:flex;flex-direction:column;gap:6px;border-left:1px solid #333;padding-left:12px;">
-              <span style="color:#666;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;">Rehab</span>
-              <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;" title="Auto-travel to Switzerland and rehab before shopping when addiction exceeds the threshold. Also rehabbing in Switzerland before shopping when already there.">
-                <input id="tm-af2-rehab-enabled" type="checkbox"> Auto-Rehab &#x1F489; (Switzerland)
-              </label>
-              <label style="display:flex;align-items:center;gap:6px;user-select:none;" title="Fly to Switzerland and rehab when stat penalty reaches this level or worse.">
-                Rehab at:
-                <select id="tm-af2-min-addiction"
-                  style="padding:2px 4px;border-radius:3px;border:1px solid #555;background:#111;color:#eee;font-size:12px;">
-                  <option value="0">Any (-1%+)</option>
-                  <option value="1">Moderate (-5%+)</option>
-                  <option value="2">Heavy (-10%+)</option>
-                  <option value="3">Severe (-20%+)</option>
-                  <option value="4">Extreme (-30%+)</option>
-                </select>
-              </label>
-            </div>
-          </div>
         </details>
 
         <!-- Shopping List -->
