@@ -70,8 +70,8 @@
     #ima-toggle {
       position: fixed;
       right: 0;
-      top: 50%;
-      transform: translateY(-50%);
+      top: 30%;
+      transform: translateY(-30%);
       background: rgba(110,231,247,0.08);
       border: 1px solid rgba(110,231,247,0.2);
       border-right: none;
@@ -925,11 +925,15 @@
               ticks: { color: 'rgba(251,191,36,0.45)', maxTicksLimit: 4, callback: v => { const mx = Math.max(...qtyData.map(p => p.y), 1); return v <= mx ? Number(v).toLocaleString() : null; } },
             },
           },
-          onClick: (e, elements) => {
-            if (!elements.length) return;
-            const el = elements[0];
-            if (el.datasetIndex === 2) return;
-            const price = el.datasetIndex === 0 ? priceData[el.index]?.y : avgData[el.index]?.y;
+          onClick: (e, elements, chart) => {
+            let hits = elements;
+            if (!hits.length && e.native) {
+              hits = chart.getElementsAtEventForMode(e.native, 'nearest', { intersect: false }, false);
+            }
+            if (!hits.length) return;
+            const hit = hits[0];
+            if (hit.datasetIndex === 2) return;
+            const price = hit.datasetIndex === 0 ? priceData[hit.index]?.y : avgData[hit.index]?.y;
             if (!price) return;
             chartClickFill(price);
           },
