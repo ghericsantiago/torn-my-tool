@@ -185,6 +185,15 @@
       filter: invert(0.4) sepia(1) saturate(3) hue-rotate(160deg); cursor: pointer;
     }
 
+    /* ── Filter collapse ── */
+    #ima-date-collapse {
+      max-height: 0; overflow: hidden;
+      transition: max-height 0.28s cubic-bezier(0.4,0,0.2,1), padding 0.28s cubic-bezier(0.4,0,0.2,1);
+      display: flex; flex-direction: column; gap: 7px; padding: 0;
+    }
+    #ima-date-collapse.open { max-height: 120px; padding-top: 2px; }
+    #ima-date-toggle { font-size: 10px; font-family: var(--ima-mono); letter-spacing: 0.05em; }
+
     /* ── Status ── */
     #ima-status { font-family: var(--ima-mono); font-size: 10px; color: var(--ima-muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #ima-status.err { color: var(--ima-error); }
@@ -447,17 +456,25 @@
           <span id="ima-status"></span>
         </div>
         <div class="ima-ctrl-row">
+          <button class="ima-btn ghost" id="ima-date-toggle">&#x2699; Date / Time</button>
+          <div style="flex:1"></div>
           <button class="ima-nav" id="ima-prev" title="Previous day">&#x2039;</button>
-          <label>From</label>
-          <input id="ima-from" type="date" value="${today}">
-          <label>To</label>
-          <input id="ima-to"   type="date" value="${today}">
+          <button class="ima-btn" id="ima-apply" style="flex:0;padding:0 16px">Apply</button>
           <button class="ima-nav" id="ima-next" title="Next day">&#x203A;</button>
-          <div id="ima-time-grp" style="display:flex;gap:4px;align-items:center">
+        </div>
+        <div id="ima-date-collapse">
+          <div class="ima-ctrl-row">
+            <label>From</label>
+            <input id="ima-from" type="date" value="${today}">
+            <label>To</label>
+            <input id="ima-to"   type="date" value="${today}">
+          </div>
+          <div class="ima-ctrl-row">
             <label>Time</label>
             <input id="ima-time-from" type="time" value="00:00">
             <span style="color:var(--ima-muted);font-size:11px">—</span>
             <input id="ima-time-to"   type="time" value="23:59">
+            <button class="ima-btn ghost" id="ima-reset" style="margin-left:auto">Reset</button>
           </div>
         </div>
         <div class="ima-ctrl-row">
@@ -469,8 +486,6 @@
           <button class="ima-tf-btn active" data-tf="5m">5M</button>
           <button class="ima-tf-btn" data-tf="1m">1M</button>
           <div style="flex:1"></div>
-          <button class="ima-btn" id="ima-apply">Apply</button>
-          <button class="ima-btn ghost" id="ima-reset">Reset</button>
           <button class="ima-btn ghost" id="ima-auto-btn">&#x21BB; Auto</button>
         </div>
       </div>
@@ -617,6 +632,11 @@
     panel.querySelector('#ima-prev')        .addEventListener('click', () => shiftDay(-1));
     panel.querySelector('#ima-next')        .addEventListener('click', () => shiftDay(1));
     panel.querySelector('#ima-auto-btn')    .addEventListener('click', toggleAutoRefresh);
+    panel.querySelector('#ima-date-toggle') .addEventListener('click', function () {
+      const body = document.getElementById('ima-date-collapse');
+      const open = body.classList.toggle('open');
+      this.classList.toggle('active-toggle', open);
+    });
     panel.querySelector('#ima-c-reset')     .addEventListener('click', resetCalculator);
     panel.querySelector('#ima-best-btn')    .addEventListener('click', toggleBestDrawer);
     panel.querySelector('#ima-best-close')  .addEventListener('click', toggleBestDrawer);
