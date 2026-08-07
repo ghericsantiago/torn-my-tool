@@ -37,6 +37,8 @@
   let awaitingSell     = false;
   let bestLoaded       = false;
   let calcAutoOpen     = true;
+  let bestData         = [];
+  let bestSort         = { col: 'net_profit', dir: 'desc' };
 
   // ── Google Fonts ───────────────────────────────────────────────────────────
   const _link = document.createElement('link');
@@ -377,7 +379,12 @@
       font-family: var(--ima-mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em;
       color: var(--ima-muted); border-bottom: 1px solid var(--ima-border); margin-bottom: 4px;
     }
+    .ima-best-hdr span { cursor: pointer; user-select: none; transition: color var(--ima-tr); }
     .ima-best-hdr span:not(:first-child) { text-align: right; }
+    .ima-best-hdr span:hover { color: var(--ima-text); }
+    .ima-best-hdr span::after { content: " ↕"; font-size: 7px; opacity: .2; }
+    .ima-best-hdr span.s-asc::after  { content: " ↑"; opacity: 1; color: var(--ima-accent); }
+    .ima-best-hdr span.s-desc::after { content: " ↓"; opacity: 1; color: var(--ima-accent); }
     .ima-best-row {
       display: grid; grid-template-columns: 1fr 70px 58px 44px;
       gap: 6px; padding: 7px 8px; border-radius: 8px; cursor: pointer;
@@ -565,11 +572,11 @@
             <input type="number" class="ima-best-fee" id="ima-best-fee" value="5" min="0" max="100" step="0.1">
             <button class="ima-btn" id="ima-best-reload" style="font-size:10px;height:26px;padding:0 10px">Reload</button>
           </div>
-          <div class="ima-best-hdr">
-            <span>Item</span>
-            <span>Profit</span>
-            <span>Margin</span>
-            <span>Conf</span>
+          <div class="ima-best-hdr" id="ima-best-hdr">
+            <span data-col="name">Item</span>
+            <span data-col="net_profit" class="s-desc">Profit</span>
+            <span data-col="margin_pct">Margin</span>
+            <span data-col="confidence_pct">Conf</span>
           </div>
           <div id="ima-best-list">
             <div id="ima-best-status">Click Best Items to load.</div>
@@ -653,6 +660,20 @@
     panel.querySelector('#ima-calc-btn')    .addEventListener('click', toggleCalcDrawer);
     panel.querySelector('#ima-calc-close')  .addEventListener('click', toggleCalcDrawer);
     panel.querySelector('#ima-best-reload') .addEventListener('click', () => fetchBestItems(true));
+    panel.querySelectorAll('#ima-best-hdr span[data-col]').forEach(span => {
+      span.addEventListener('click', () => {
+        const col = span.dataset.col;
+        if (bestSort.col === col) {
+          bestSort.dir = bestSort.dir === 'asc' ? 'desc' : 'asc';
+        } else {
+          bestSort.col = col;
+          bestSort.dir = col === 'name' ? 'asc' : 'desc';
+        }
+        panel.querySelectorAll('#ima-best-hdr span[data-col]').forEach(s => s.classList.remove('s-asc', 's-desc'));
+        span.classList.add(bestSort.dir === 'asc' ? 's-asc' : 's-desc');
+        renderBestItems();
+      });
+    });
 
     panel.querySelectorAll('.ima-tab').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1018,43 +1039,60 @@
     const list = document.getElementById('ima-best-list');
     list.innerHTML = '<div id="ima-best-status"><div class="ima-spin" style="margin:0 auto 10px"></div></div>';
     bestLoaded = false;
+    bestData   = [];
 
     try {
-      const fee  = parseFloat(document.getElementById('ima-best-fee').value) || 5;
-      const data = await apiFetch(`/api/best-items?fee=${fee}`);
+      const fee = parseFloat(document.getElementById('ima-best-fee').value) || 5;
+      bestData  = await apiFetch(`/api/best-items?fee=${fee}`);
       bestLoaded = true;
-
-      if (!data.length) { list.innerHTML = '<div id="ima-best-status">No profitable items found yet.</div>'; return; }
-
-      list.innerHTML = data.map(item => {
-        const m = Number(item.margin_pct);
-        const c = Number(item.confidence_pct);
-        const mCls = m >= 15 ? 'high' : m >= 5 ? 'mid' : '';
-        const cCls = c >= 80 ? 'hi'   : c >= 50 ? 'md'  : 'lo';
-        return `
-          <div class="ima-best-row" data-id="${item.item_id}" data-name="${esc(item.name)}">
-            <span class="ima-best-name" title="${esc(item.name)}">${esc(item.name)}</span>
-            <span class="ima-best-val ima-best-profit">${fmt$(item.net_profit)}</span>
-            <span class="ima-best-val ima-best-margin ${mCls}">+${m}%</span>
-            <span class="ima-best-val ima-best-conf ${cCls}">${c}%</span>
-          </div>`;
-      }).join('');
-
-      list.querySelectorAll('.ima-best-row').forEach(row => {
-        row.addEventListener('click', () => {
-          currentItemId = parseInt(row.dataset.id);
-          document.getElementById('ima-item-name').value = row.dataset.name;
-          document.getElementById('ima-best-drawer').classList.remove('visible');
-          document.getElementById('ima-best-btn').classList.remove('active');
-          activeTab = 'chart';
-          document.querySelectorAll('.ima-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'chart'));
-          showTab('chart');
-          fetchData();
-        });
-      });
+      renderBestItems();
     } catch(e) {
       list.innerHTML = `<div id="ima-best-status" style="color:var(--ima-error)">${esc(e.message)}</div>`;
     }
+  }
+
+  function renderBestItems() {
+    const list = document.getElementById('ima-best-list');
+    if (!bestData.length) { list.innerHTML = '<div id="ima-best-status">No profitable items found yet.</div>'; return; }
+
+    const sorted = [...bestData].sort((a, b) => {
+      let av, bv;
+      switch (bestSort.col) {
+        case 'name':           av = (a.name||'').toLowerCase(); bv = (b.name||'').toLowerCase(); break;
+        case 'net_profit':     av = +a.net_profit;     bv = +b.net_profit;     break;
+        case 'margin_pct':     av = +a.margin_pct;     bv = +b.margin_pct;     break;
+        case 'confidence_pct': av = +a.confidence_pct; bv = +b.confidence_pct; break;
+        default: return 0;
+      }
+      return bestSort.dir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+    });
+
+    list.innerHTML = sorted.map(item => {
+      const m = Number(item.margin_pct);
+      const c = Number(item.confidence_pct);
+      const mCls = m >= 15 ? 'high' : m >= 5 ? 'mid' : '';
+      const cCls = c >= 80 ? 'hi'   : c >= 50 ? 'md'  : 'lo';
+      return `
+        <div class="ima-best-row" data-id="${item.item_id}" data-name="${esc(item.name)}">
+          <span class="ima-best-name" title="${esc(item.name)}">${esc(item.name)}</span>
+          <span class="ima-best-val ima-best-profit">${fmt$(item.net_profit)}</span>
+          <span class="ima-best-val ima-best-margin ${mCls}">+${m}%</span>
+          <span class="ima-best-val ima-best-conf ${cCls}">${c}%</span>
+        </div>`;
+    }).join('');
+
+    list.querySelectorAll('.ima-best-row').forEach(row => {
+      row.addEventListener('click', () => {
+        currentItemId = parseInt(row.dataset.id);
+        document.getElementById('ima-item-name').value = row.dataset.name;
+        document.getElementById('ima-best-drawer').classList.remove('visible');
+        document.getElementById('ima-best-btn').classList.remove('active');
+        activeTab = 'chart';
+        document.querySelectorAll('.ima-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'chart'));
+        showTab('chart');
+        fetchData();
+      });
+    });
   }
 
   // ── Calculator ────────────────────────────────────────────────────────────
